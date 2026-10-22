@@ -108,4 +108,31 @@ public final class PlaybackGestureTest extends TestCase {
         assertTrue(views().stream().anyMatch(v->v instanceof TextView&&v.isShown()&&((TextView)v).getText().toString().contains("暂不支持调整进度")));
         swipe(.3f,.5f,.7f,.5f,false);awaitPosition(6000);
     }
+    /** Back must first dismiss visible controls without leaving the player. */
+    private void pressBack()throws Exception {
+        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrument.waitForIdleSync();
+    }
+    public void testBackDismissesVisibleControlsBeforeLeavingVod()throws Exception {
+        launch();
+        instrument.runOnMainSync(()->video().showController());Thread.sleep(150);
+        boolean[] visible={false};instrument.runOnMainSync(()->visible[0]=video().isControllerFullyVisible());assertTrue("Controller should be visible",visible[0]);
+        pressBack();
+        boolean[] stillHere={false},hidden={false};instrument.runOnMainSync(()->{stillHere[0]=!activity.isFinishing();hidden[0]=!video().isControllerFullyVisible();});
+        assertTrue("Back must not leave the player while controls are visible",stillHere[0]);assertTrue("Back must hide the visible controls",hidden[0]);
+        pressBack();
+        boolean[] left={false};instrument.runOnMainSync(()->left[0]=activity.isFinishing());assertTrue("Second back with hidden controls leaves the player",left[0]);
+        activity=null;
+    }
+    public void testBackDismissesVisibleControlsBeforeLeavingLive()throws Exception {
+        LiveRepository repo=new LiveRepository(context);repo.importPlaylist("Gesture live",LocalRepository.fetch(ROOT+"/live/list"));String id=repo.channels().getJSONObject(0).getString("id");
+        activity=instrument.startActivitySync(new Intent(context,LivePlayerActivity.class).putExtra("channelId",id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));ready();
+        instrument.runOnMainSync(()->video().showController());Thread.sleep(150);
+        boolean[] visible={false};instrument.runOnMainSync(()->visible[0]=video().isControllerFullyVisible());assertTrue("Controller should be visible",visible[0]);
+        pressBack();
+        boolean[] stillHere={false},hidden={false};instrument.runOnMainSync(()->{stillHere[0]=!activity.isFinishing();hidden[0]=!video().isControllerFullyVisible();});
+        assertTrue("Back must not leave the live channel while controls are visible",stillHere[0]);assertTrue("Back must hide the visible controls",hidden[0]);
+        pressBack();
+        boolean[] left={false};instrument.runOnMainSync(()->left[0]=activity.isFinishing());assertTrue("Second back with hidden controls leaves the player",left[0]);
+        activity=null;
+    }
 }

@@ -221,6 +221,12 @@ public final class LivePlayerActivity extends Activity {
         }
         return super.dispatchKeyEvent(event);
     }
+    @SuppressWarnings("deprecation") @Override public void onBackPressed(){
+        if(video!=null&&(video.isControllerFullyVisible()||chrome.getVisibility()==View.VISIBLE)){
+            video.hideController();chrome.setVisibility(View.GONE);return;
+        }
+        super.onBackPressed();
+    }
     @Override protected void onSaveInstanceState(Bundle state){state.putFloat("windowBrightness",getWindow().getAttributes().screenBrightness);state.putBoolean("resume",player==null?playAfterRecovery:player.getPlayWhenReady());try{state.putString("channelId",channel().getString("id"));state.putInt("line",lineIndex);}catch(Exception ignored){}super.onSaveInstanceState(state);}
     @Override protected void onStop(){active=false;++ticket;cancelRetry();main.removeCallbacks(watchdog);stage.release();if(pending!=null)pending.cancel(true);if(player!=null){playAfterRecovery=player.getPlayWhenReady();video.setPlayer(null);player.release();player=null;}super.onStop();}
     @Override protected void onDestroy(){worker.shutdownNow();main.removeCallbacksAndMessages(null);super.onDestroy();}

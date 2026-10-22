@@ -194,6 +194,10 @@ public final class DirectPlayerActivity extends Activity {
     }
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)applySystemBars();}
     @SuppressWarnings("deprecation") @Override public void onBackPressed(){
+        if(playerView!=null&&(controlsVisible||playerView.isControllerFullyVisible())){
+            playerView.hideController();controlsVisible=false;
+            topChrome.setVisibility(View.GONE);bottomChrome.setVisibility(View.GONE);return;
+        }
         if(getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE)setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         else super.onBackPressed();
     }
