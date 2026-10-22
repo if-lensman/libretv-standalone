@@ -2,6 +2,8 @@ package family.libretv.tv;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
 import android.graphics.drawable.GradientDrawable;
 import android.net.ConnectivityManager;
 import android.os.*;
@@ -31,7 +33,7 @@ public final class LivePlayerActivity extends Activity {
     private PlaybackGestureLayout stage;
     private LinearLayout chrome,statusPanel;
     private TextView title,statusText;
-    private Button lines,retryButton,statusNext;
+    private Button lines,retryButton,statusNext,orientationButton;
     private ProgressBar spinner;
     private final LiveRecoveryPolicy recovery=new LiveRecoveryPolicy();
     private final LivePlaybackWatchdog monitor=new LivePlaybackWatchdog();
@@ -57,16 +59,19 @@ public final class LivePlayerActivity extends Activity {
         video=new PlayerView(this);video.setControllerShowTimeoutMs(3000);stage.addView(video,new FrameLayout.LayoutParams(-1,-1));
         if(tvRemote){video.setShowRewindButton(false);video.setShowFastForwardButton(false);}
         chrome=new LinearLayout(this);chrome.setOrientation(LinearLayout.VERTICAL);chrome.setPadding(dp(10),dp(4),dp(10),dp(6));chrome.setBackgroundColor(0xd9101723);
-        title=new TextView(this);title.setTextColor(0xffffffff);title.setTextSize(18);chrome.addView(title);
+        title=new TextView(this);title.setTextColor(0xffffffff);title.setTextSize(18);
+        LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);chrome.addView(heading);
+        heading.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        if(!tvRemote){orientationButton=button(heading,"",this::toggleOrientation);orientationButton.setLayoutParams(new LinearLayout.LayoutParams(dp(76),dp(46)));updateOrientationButton();}
         LinearLayout actions=new LinearLayout(this);chrome.addView(actions);
         button(actions,"返回",this::finish);button(actions,"上一台",()->switchChannel(-1));button(actions,"下一台",()->switchChannel(1));
         button(actions,"回到直播",()->beginRound(lineIndex,"正在回到直播位置…",true));
         lines=button(actions,"换线路",this::manualNextLine);
         stage.addView(chrome,new FrameLayout.LayoutParams(-1,-2,Gravity.TOP));
         video.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener)v->chrome.setVisibility(v));
-        ViewCompat.setOnApplyWindowInsetsListener(chrome,(v,insets)->{androidx.core.graphics.Insets b=insets.getInsets(WindowInsetsCompat.Type.systemBars());v.setPadding(dp(10)+b.left,dp(4)+b.top,dp(10)+b.right,dp(6));return insets;});
+        ViewCompat.setOnApplyWindowInsetsListener(chrome,(v,insets)->{androidx.core.graphics.Insets b=insets.getInsets(WindowInsetsCompat.Type.systemBars()|WindowInsetsCompat.Type.displayCutout());v.setPadding(dp(10)+b.left,dp(4)+b.top,dp(10)+b.right,dp(6));return insets;});
         buildStatusPanel();
-        setContentView(stage);WindowInsetsControllerCompat bars=WindowCompat.getInsetsController(getWindow(),stage);bars.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);bars.hide(WindowInsetsCompat.Type.systemBars());
+        setContentView(stage);hideSystemBars();
         try{
             repository=new LiveRepository(this);channels=repository.channels();
             String id=state==null?getIntent().getStringExtra("channelId"):state.getString("channelId");
@@ -74,6 +79,16 @@ public final class LivePlayerActivity extends Activity {
             restoreLine=state!=null;lineIndex=state==null?0:state.getInt("line");playAfterRecovery=state==null||state.getBoolean("resume",true);
         }catch(Exception e){initialError="频道资料无法读取，请返回更新频道列表";}
     }
+    private boolean landscape(){return getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE;}
+    private void toggleOrientation(){setRequestedOrientation(landscape()?ActivityInfo.SCREEN_ORIENTATION_PORTRAIT:ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);}
+    private void updateOrientationButton(){if(orientationButton!=null)orientationButton.setText(landscape()?"竖屏":"横屏");}
+    private void hideSystemBars(){
+        WindowInsetsControllerCompat bars=WindowCompat.getInsetsController(getWindow(),stage);
+        bars.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);bars.hide(WindowInsetsCompat.Type.systemBars());
+    }
+    // Rotation only relayouts the live surface; it must not reconnect or restart recovery timers.
+    @Override public void onConfigurationChanged(Configuration configuration){super.onConfigurationChanged(configuration);updateOrientationButton();hideSystemBars();ViewCompat.requestApplyInsets(chrome);}
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused&&stage!=null)hideSystemBars();}
     private Button button(LinearLayout row,String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(12);b.setTextColor(0xffffffff);b.setBackgroundResource(R.drawable.focus_button);b.setPadding(dp(4),0,dp(4),0);row.addView(b,new LinearLayout.LayoutParams(0,dp(46),1));b.setOnClickListener(v->action.run());return b;}
     private void buildStatusPanel(){
         statusPanel=new LinearLayout(this);statusPanel.setOrientation(LinearLayout.VERTICAL);statusPanel.setGravity(Gravity.CENTER);statusPanel.setPadding(dp(18),dp(16),dp(18),dp(12));
@@ -225,6 +240,7 @@ public final class LivePlayerActivity extends Activity {
         if(video!=null&&(video.isControllerFullyVisible()||chrome.getVisibility()==View.VISIBLE)){
             video.hideController();chrome.setVisibility(View.GONE);return;
         }
+        if(!tvRemote&&landscape()){setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);return;}
         super.onBackPressed();
     }
     @Override protected void onSaveInstanceState(Bundle state){state.putFloat("windowBrightness",getWindow().getAttributes().screenBrightness);state.putBoolean("resume",player==null?playAfterRecovery:player.getPlayWhenReady());try{state.putString("channelId",channel().getString("id"));state.putInt("line",lineIndex);}catch(Exception ignored){}super.onSaveInstanceState(state);}

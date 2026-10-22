@@ -31,6 +31,7 @@ public final class PlaybackGestureTest extends TestCase {
         instrument=InstrumentationRegistry.getInstrumentation();context=instrument.getTargetContext();audio=(AudioManager)context.getSystemService(Context.AUDIO_SERVICE);oldVolume=audio.getStreamVolume(AudioManager.STREAM_MUSIC);
         for(String name:new String[]{"standalone-library","standalone-playback","standalone-player","live-library"}){SharedPreferences p=context.getSharedPreferences(name,0);backups.put(name,new HashMap<>(p.getAll()));p.edit().clear().commit();}
         context.getSharedPreferences("standalone-player",0).edit().putBoolean("autoNext",false).commit();
+        LocalRepository.fetch(ROOT+"/live/control?mode=normal");
     }
     @Override protected void tearDown()throws Exception {
         if(activity!=null){instrument.runOnMainSync(activity::finish);instrument.waitForIdleSync();}
@@ -71,6 +72,7 @@ public final class PlaybackGestureTest extends TestCase {
         event(down,MotionEvent.ACTION_UP,b[0],b[1]);assertTrue(position()>9000);
         at(6000);swipe(.65f,.5f,.3f,.5f,true);awaitPosition(6000);
         swipe(.65f,.5f,.3f,.5f,false);assertTrue(position()<3000);instrument.runOnMainSync(activity::finish);instrument.waitForIdleSync();activity=null;
+        long savedUntil=SystemClock.uptimeMillis()+3000;while(new PlaybackStore(context).all().length()==0&&SystemClock.uptimeMillis()<savedUntil)Thread.sleep(50);
         JSONArray history=new PlaybackStore(context).all();assertEquals(1,history.length());assertTrue(history.getJSONObject(0).getLong("position")<3000);
     }
     public void testLeftBrightnessAndRightMediaVolumeAreIndependent()throws Exception {
@@ -110,7 +112,8 @@ public final class PlaybackGestureTest extends TestCase {
     }
     /** Back must first dismiss visible controls without leaving the player. */
     private void pressBack()throws Exception {
-        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrument.waitForIdleSync();
+        long until=SystemClock.uptimeMillis()+3000;while(!activity.hasWindowFocus()&&SystemClock.uptimeMillis()<until)Thread.sleep(50);
+        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrument.waitForIdleSync();Thread.sleep(150);
     }
     public void testBackDismissesVisibleControlsBeforeLeavingVod()throws Exception {
         launch();
@@ -126,6 +129,7 @@ public final class PlaybackGestureTest extends TestCase {
     public void testBackDismissesVisibleControlsBeforeLeavingLive()throws Exception {
         LiveRepository repo=new LiveRepository(context);repo.importPlaylist("Gesture live",LocalRepository.fetch(ROOT+"/live/list"));String id=repo.channels().getJSONObject(0).getString("id");
         activity=instrument.startActivitySync(new Intent(context,LivePlayerActivity.class).putExtra("channelId",id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));ready();
+        instrument.runOnMainSync(()->activity.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));awaitOrientation(android.content.res.Configuration.ORIENTATION_PORTRAIT);
         instrument.runOnMainSync(()->video().showController());Thread.sleep(150);
         boolean[] visible={false};instrument.runOnMainSync(()->visible[0]=video().isControllerFullyVisible());assertTrue("Controller should be visible",visible[0]);
         pressBack();
@@ -135,4 +139,37 @@ public final class PlaybackGestureTest extends TestCase {
         boolean[] left={false};instrument.runOnMainSync(()->left[0]=activity.isFinishing());assertTrue("Second back with hidden controls leaves the player",left[0]);
         activity=null;
     }
+    private void awaitOrientation(int orientation)throws Exception {
+        long end=SystemClock.uptimeMillis()+6000;
+        while(SystemClock.uptimeMillis()<end){boolean[] match={false};instrument.runOnMainSync(()->match[0]=activity.getResources().getConfiguration().orientation==orientation&&
+            (orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE?stage().getWidth()>stage().getHeight():stage().getHeight()>stage().getWidth()));
+            if(match[0])return;Thread.sleep(100);}
+        fail("Live surface did not rotate");
+    }
+    public void testMobileLiveRotationKeepsPlayerChannelAndBackReturnsPortrait()throws Exception {
+        LiveRepository repo=new LiveRepository(context);repo.importPlaylist("Rotation live",LocalRepository.fetch(ROOT+"/live/list"));String id=repo.channels().getJSONObject(0).getString("id");
+        activity=instrument.startActivitySync(new Intent(context,LivePlayerActivity.class).putExtra("channelId",id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));ready();
+        instrument.runOnMainSync(()->activity.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));awaitOrientation(android.content.res.Configuration.ORIENTATION_PORTRAIT);
+        Object[] original=new Object[4];instrument.runOnMainSync(()->{original[0]=player();original[1]=field("index");original[2]=field("lineIndex");original[3]=field("ticket");
+            WindowManager.LayoutParams attrs=activity.getWindow().getAttributes();attrs.screenBrightness=.6f;activity.getWindow().setAttributes(attrs);
+            ((Button)field("orientationButton")).performClick();});
+        awaitOrientation(android.content.res.Configuration.ORIENTATION_LANDSCAPE);ready();
+        instrument.runOnMainSync(()->{assertSame(original[0],player());assertEquals(original[1],field("index"));assertEquals(original[2],field("lineIndex"));assertEquals(original[3],field("ticket"));
+            assertEquals(.6f,activity.getWindow().getAttributes().screenBrightness);assertTrue(player().getPlayWhenReady());assertEquals("竖屏",((Button)field("orientationButton")).getText().toString());video().showController();});
+        Thread.sleep(800);capture("live-landscape.png");pressBack();
+        instrument.runOnMainSync(()->{assertFalse(activity.isFinishing());assertFalse(video().isControllerFullyVisible());});
+        pressBack();awaitOrientation(android.content.res.Configuration.ORIENTATION_PORTRAIT);
+        instrument.runOnMainSync(()->{assertFalse(activity.isFinishing());assertSame(original[0],player());assertEquals("横屏",((Button)field("orientationButton")).getText().toString());video().hideController();});
+        pressBack();assertTrue(activity.isFinishing());activity=null;
+    }
+    public void testTvLiveHasNoRotationControlAndRightStillChangesChannel()throws Exception {
+        LiveRepository repo=new LiveRepository(context);repo.importPlaylist("TV rotation guard",LocalRepository.fetch(ROOT+"/live/list"));assertTrue("Fixture needs multiple channels",repo.channels().length()>1);String id=repo.channels().getJSONObject(0).getString("id");
+        activity=instrument.startActivitySync(new Intent(context,LivePlayerActivity.class).putExtra("channelId",id).putExtra("tvRemote",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));ready();
+        int[] before={0};instrument.runOnMainSync(()->{assertNull(field("orientationButton"));before[0]=(Integer)field("index");});
+        long focusUntil=SystemClock.uptimeMillis()+3000;while(!activity.hasWindowFocus()&&SystemClock.uptimeMillis()<focusUntil)Thread.sleep(50);
+        instrument.runOnMainSync(()->{activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_RIGHT));activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_RIGHT));});
+        long changedUntil=SystemClock.uptimeMillis()+3000;boolean[] changed={false};while(SystemClock.uptimeMillis()<changedUntil){instrument.runOnMainSync(()->changed[0]=before[0]!=(Integer)field("index"));if(changed[0])break;Thread.sleep(50);}
+        assertTrue("Remote right must switch channels",changed[0]);ready();
+    }
+
 }
