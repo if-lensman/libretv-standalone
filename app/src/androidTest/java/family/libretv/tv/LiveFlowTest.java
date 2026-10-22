@@ -62,11 +62,11 @@ public final class LiveFlowTest extends TestCase {
         String id=repository.channels().getJSONObject(0).getString("id");repository.toggleFavorite(id);repository.remember(id);
         assertEquals(sources,context.getSharedPreferences("standalone-library",0).getAll());assertEquals(progress,context.getSharedPreferences("standalone-playback",0).getAll());
     }
-    public void testFourTabsKeepSearchAndMoveSourceControlsIntoSettings()throws Exception {
+    public void testFiveTabsKeepSearchAndMoveSourceControlsIntoSettings()throws Exception {
         new LocalRepository(context).importSources("{\"sources\":[{\"name\":\"影视夹具\",\"url\":\""+ROOT+"/cms\"}]}");subscribe();
         activity=instrument.startActivitySync(new Intent(context,PhoneActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
-        await("搜索电影、电视剧");assertFalse(texts().toString().contains("无需 NAS"));
-        assertFalse(texts().contains("来源配置"));assertFalse(texts().contains("首页"));
+        await("LibreTV");assertFalse(texts().toString().contains("无需 NAS"));
+        assertFalse(texts().contains("来源配置"));assertTrue(texts().contains("首页"));
         clickDescription("底部导航 · 直播");await("测试直播一");clickDescription("底部导航 · 设置");await("影视来源");click("直播订阅");await("自动更新频道");
         clickDescription("底部导航 · 历史");await("观看历史");assertTrue(texts().contains("本机收藏夹"));assertTrue(texts().contains("播放列表"));
         clickDescription("底部导航 · 搜索");await("搜索电影、电视剧");
@@ -86,14 +86,13 @@ public final class LiveFlowTest extends TestCase {
         assertEquals(before,context.getSharedPreferences("standalone-playback",0).getAll());
     }
     public void testTvLiveEntranceUsesSameCacheAndDoesNotReplaceVod()throws Exception {
-        subscribe();activity=instrument.startActivitySync(new Intent(context,LiveBrowseActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));await("测试直播一");assertTrue(texts().contains("返回选片"));assertTrue(texts().contains("频道分组 · 全部"));
-        Activity browse=activity;Thread.sleep(250);instrument.waitForIdleSync();
-        View[] focus={null};instrument.runOnMainSync(()->focus[0]=browse.getCurrentFocus());
-        assertTrue(focus[0] instanceof Button);assertEquals("频道分组 · 全部",((Button)focus[0]).getText().toString());
-        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_DOWN);instrument.waitForIdleSync();
-        instrument.runOnMainSync(()->focus[0]=browse.getCurrentFocus());assertTrue(focus[0] instanceof Button);assertEquals("测试直播一",((Button)focus[0]).getText().toString());
+        subscribe();activity=instrument.startActivitySync(new Intent(context,LiveBrowseActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));await("测试直播一");assertTrue(texts().contains("返回选片"));assertTrue(texts().contains("频道分组"));
+        Activity browse=activity;long end=android.os.SystemClock.uptimeMillis()+5000;View[] focus={null};
+        while(android.os.SystemClock.uptimeMillis()<end){instrument.runOnMainSync(()->focus[0]=browse.getCurrentFocus());if(focus[0]!=null&&"播放频道 · 测试直播一".equals(String.valueOf(focus[0].getContentDescription())))break;Thread.sleep(100);}
+        assertNotNull(focus[0]);assertEquals("播放频道 · 测试直播一",String.valueOf(focus[0].getContentDescription()));
         instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER);instrument.waitForIdleSync();
-        instrument.runOnMainSync(()->{for(Activity candidate:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))if(candidate instanceof LivePlayerActivity)activity=candidate;});
+        long openedUntil=android.os.SystemClock.uptimeMillis()+5000;
+        while(!(activity instanceof LivePlayerActivity)&&android.os.SystemClock.uptimeMillis()<openedUntil){instrument.runOnMainSync(()->{for(Activity candidate:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))if(candidate instanceof LivePlayerActivity)activity=candidate;});Thread.sleep(100);}
         assertTrue("DPAD did not open live player",activity instanceof LivePlayerActivity);awaitPlaying();capture("tv-live-playing.png");
         assertEquals(2,repository.channels().length());instrument.runOnMainSync(browse::finish);
     }

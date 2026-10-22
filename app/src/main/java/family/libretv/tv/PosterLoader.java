@@ -19,10 +19,12 @@ final class PosterLoader {
         @Override protected int sizeOf(String key, Bitmap value) { return value.getAllocationByteCount(); }
     };
     private boolean closed;
-    void load(ImageView view, NasClient client, String url) {
-        String key = client.origin + "|" + url;
+    void load(ImageView view, NasClient client, String url) { load(view,client,url,R.drawable.poster_placeholder); }
+    void loadPublic(ImageView view,String url,int placeholder) { load(view,null,url,placeholder); }
+    private void load(ImageView view,NasClient client,String url,int placeholder) {
+        String key = (client==null?"public":client.origin) + "|" + url;
         view.setTag(key);
-        view.setImageResource(R.drawable.poster_placeholder);
+        view.setImageResource(placeholder);
         if (url.isEmpty() || closed) return;
         Bitmap saved = cache.get(key);
         if (saved != null) { view.setImageBitmap(saved); return; }
@@ -38,9 +40,9 @@ final class PosterLoader {
     private Bitmap fetch(NasClient client, String url) {
         HttpURLConnection connection = null;
         try {
-            connection = client.open(client.proxy(url));
+            connection = client==null?LocalRepository.open(LocalRepository.validate(url)):client.open(client.proxy(url));
             String host=java.net.URI.create(url).getHost();
-            if(client.local!=null && host!=null && (host.equals("doubanio.com") || host.endsWith(".doubanio.com")))
+            if((client==null||client.local!=null) && host!=null && (host.equals("doubanio.com") || host.endsWith(".doubanio.com")))
                 connection.setRequestProperty("Referer","https://movie.douban.com/");
             connection.setReadTimeout(12000);
             if (connection.getResponseCode() != 200) return null;
