@@ -22,15 +22,9 @@ Android 手机与电视上的独立影音客户端，使用原生 Views、Media3
 ./gradlew :app:assembleDebug
 ```
 
-不提供本地文件时会生成空来源配置；`-PincludeLocalSources=false` 始终强制使用空配置。升级仅补入新的默认来源一次，保留用户删除记录和启停状态。`legacyDefault: true` 仅供早期未记录默认来源的安装迁移使用。
+不提供本地文件时会生成空来源配置；`-PincludeLocalSources=false` 始终强制使用空配置。升级仅补入新的默认来源一次，保留用户删除记录和启停状态。
 
 **包含本地配置的 APK 也包含源地址**，请勿将其作为公开发行包上传。源码打包脚本不会收录 `local/`、研究记录、设备证据或签名文件。
-
-## 安装身份与更新
-
-默认包名 `family.libretv.standalone`。使用 `-PfamilyUpgrade=true` 构建兼容旧家庭客户端的 `family.libretv.tv`，输出位于 `app/build-family-upgrade/`。覆盖安装要求签名相同、版本码更高；保管好已有签名密钥。
-
-兼容构建保留可选 NAS 更新入口，可沿用家庭更新服务。现有手机安装后可通过原更新通道取得新版，系统安装仍需用户确认。GitHub 仓库本身不配置更新服务器、家庭地址或凭证。NAS 服务端可独立保留用于电脑批量下载。
 
 ## 验证与许可
 
