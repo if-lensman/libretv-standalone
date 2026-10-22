@@ -21,6 +21,8 @@ public final class LivePlayerActivity extends Activity {
     private int index,lineIndex,ticket,retries;
     private ExoPlayer player;
     private PlayerView video;
+    private PlaybackGestureLayout stage;
+    private LinearLayout chrome;
     private TextView title;
     private Button lines;
     private final Handler main=new Handler(Looper.getMainLooper());
@@ -31,9 +33,11 @@ public final class LivePlayerActivity extends Activity {
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     @Override public void onCreate(Bundle state){
         super.onCreate(state);WindowCompat.setDecorFitsSystemWindows(getWindow(),false);
-        FrameLayout stage=new FrameLayout(this);stage.setBackgroundColor(0xff0c141d);
+        setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
+        if(state!=null&&state.containsKey("windowBrightness")){WindowManager.LayoutParams attrs=getWindow().getAttributes();attrs.screenBrightness=state.getFloat("windowBrightness");getWindow().setAttributes(attrs);}
+        stage=new PlaybackGestureLayout(this);stage.setBackgroundColor(0xff0c141d);
         video=new PlayerView(this);video.setControllerShowTimeoutMs(3000);stage.addView(video,new FrameLayout.LayoutParams(-1,-1));
-        LinearLayout chrome=new LinearLayout(this);chrome.setOrientation(LinearLayout.VERTICAL);chrome.setPadding(dp(10),dp(4),dp(10),dp(6));chrome.setBackgroundColor(0xd9101723);
+        chrome=new LinearLayout(this);chrome.setOrientation(LinearLayout.VERTICAL);chrome.setPadding(dp(10),dp(4),dp(10),dp(6));chrome.setBackgroundColor(0xd9101723);
         title=new TextView(this);title.setTextColor(0xffffffff);title.setTextSize(18);chrome.addView(title);
         LinearLayout actions=new LinearLayout(this);chrome.addView(actions);
         button(actions,"返回",this::finish);button(actions,"上一台",()->switchChannel(-1));button(actions,"下一台",()->switchChannel(1));
@@ -47,7 +51,7 @@ public final class LivePlayerActivity extends Activity {
         catch(Exception e){title.setText(e.getMessage());channels=new JSONArray();}
     }
     private Button button(LinearLayout row,String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(12);b.setTextColor(0xffffffff);b.setBackgroundResource(R.drawable.focus_button);b.setPadding(dp(4),0,dp(4),0);row.addView(b,new LinearLayout.LayoutParams(0,dp(46),1));b.setOnClickListener(v->action.run());return b;}
-    @Override protected void onStart(){super.onStart();active=true;retries=0;if(channels.length()==0)return;player=new ExoPlayer.Builder(this).build();video.setPlayer(player);video.setKeepScreenOn(true);player.setPlaybackSpeed(1f);player.addListener(new Player.Listener(){
+    @Override protected void onStart(){super.onStart();active=true;retries=0;if(channels.length()==0)return;player=new ExoPlayer.Builder(this).build();video.setPlayer(player);stage.bind(player,video,chrome);video.setKeepScreenOn(true);player.setPlaybackSpeed(1f);player.addListener(new Player.Listener(){
         @Override public void onPlayerError(PlaybackException error){
             if(!active)return;
             if(retries++<3){title.setText("直播连接中断，正在重连…");main.removeCallbacks(retry);main.postDelayed(retry,Math.min(8000,1000L<<Math.min(3,retries-1)));}
@@ -72,7 +76,7 @@ public final class LivePlayerActivity extends Activity {
             }catch(Exception e){main.post(()->{if(active&&generation==ticket){title.setText("频道暂不可用，请重试或切换线路");video.showController();}});}});
         }catch(Exception e){title.setText("频道资料无效，请更新频道列表");}
     }
-    @Override protected void onSaveInstanceState(Bundle state){try{state.putString("channelId",channels.getJSONObject(index).getString("id"));state.putInt("line",lineIndex);}catch(Exception ignored){}super.onSaveInstanceState(state);}
-    @Override protected void onStop(){active=false;++ticket;main.removeCallbacks(retry);if(pending!=null)pending.cancel(true);if(player!=null){video.setPlayer(null);player.release();player=null;}super.onStop();}
+    @Override protected void onSaveInstanceState(Bundle state){state.putFloat("windowBrightness",getWindow().getAttributes().screenBrightness);try{state.putString("channelId",channels.getJSONObject(index).getString("id"));state.putInt("line",lineIndex);}catch(Exception ignored){}super.onSaveInstanceState(state);}
+    @Override protected void onStop(){stage.release();active=false;++ticket;main.removeCallbacks(retry);if(pending!=null)pending.cancel(true);if(player!=null){video.setPlayer(null);player.release();player=null;}super.onStop();}
     @Override protected void onDestroy(){worker.shutdownNow();main.removeCallbacksAndMessages(null);super.onDestroy();}
 }

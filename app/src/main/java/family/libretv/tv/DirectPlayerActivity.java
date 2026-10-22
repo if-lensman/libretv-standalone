@@ -29,7 +29,7 @@ import java.util.Arrays;
 public final class DirectPlayerActivity extends Activity {
     private ExoPlayer player;
     private PlayerView playerView;
-    private FrameLayout stage;
+    private PlaybackGestureLayout stage;
     private LinearLayout topChrome,bottomChrome;
     private boolean controlsVisible=true;
     private SubtitleMenu subtitles;
@@ -51,6 +51,8 @@ public final class DirectPlayerActivity extends Activity {
     };
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
+        if(state!=null&&state.containsKey("windowBrightness")){android.view.WindowManager.LayoutParams attrs=getWindow().getAttributes();attrs.screenBrightness=state.getFloat("windowBrightness");getWindow().setAttributes(attrs);}
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         history = new PlaybackStore(this);
         settings = getSharedPreferences("standalone-player", 0);
@@ -80,7 +82,7 @@ public final class DirectPlayerActivity extends Activity {
     @Override protected void onStart() {
         super.onStart();
         boolean restoreControls=controlsVisible;
-        stage=new FrameLayout(this);stage.setBackgroundColor(0xff000000);
+        stage=new PlaybackGestureLayout(this);stage.setBackgroundColor(0xff000000);
         playerView=new PlayerView(this);stage.addView(playerView,new FrameLayout.LayoutParams(-1,-1));
         playerView.setControllerShowTimeoutMs(3000);playerView.setControllerHideOnTouch(true);
         playerView.setControllerAutoShow(true);
@@ -118,6 +120,7 @@ public final class DirectPlayerActivity extends Activity {
             NasClient direct = new NasClient(this);
             player = new ExoPlayer.Builder(this).setMediaSourceFactory(new DefaultMediaSourceFactory(() -> new NasDataSource(direct))).build();
             playerView.setPlayer(player); playerView.setKeepScreenOn(true);
+            stage.bind(player,playerView,topChrome,bottomChrome);
             subtitles = new SubtitleMenu(this, player, subtitle, playerView.getSubtitleView(), settings, this::resumeControls, true);
             player.setPlaybackSpeed(settings.getFloat("speed", 1));
             player.addListener(new Player.Listener() {
@@ -198,6 +201,7 @@ public final class DirectPlayerActivity extends Activity {
         if (player != null) history.save(source, item, title, index, player.getCurrentPosition(), player.getDuration());
     }
     @Override protected void onSaveInstanceState(Bundle state) {
+        state.putFloat("windowBrightness",getWindow().getAttributes().screenBrightness);
         state.putInt("index", index);
         state.putBoolean("controlsVisible",controlsVisible);
         state.putLong("position", player == null ? position : player.getCurrentPosition());
@@ -205,6 +209,7 @@ public final class DirectPlayerActivity extends Activity {
     }
     @Override protected void onPause() { saveProgress(); super.onPause(); }
     @Override protected void onStop() {
+        if(stage!=null)stage.release();
         main.removeCallbacks(checkpoint); if (dialog != null) dialog.dismiss(); if (subtitles != null) subtitles.close();
         if (player != null) { saveProgress(); position = player.getCurrentPosition(); resume = player.getPlayWhenReady(); player.release(); player = null; }
         super.onStop();
