@@ -1,0 +1,9 @@
+{
+  "sources": [
+    {
+      "name": "示例来源",
+      "url": "https://example.invalid/api.php/provide/vod",
+      "enabled": true
+    }
+  ]
+}

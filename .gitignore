@@ -1,0 +1,32 @@
+**/build/
+.gradle/
+.idea/
+local.properties
+household.properties
+*.jks
+*.keystore
+*.apk
+*.zip
+*.log
+.DS_Store
+
+# Local device screenshots/UI dumps and generated synthetic playback media.
+research/device-validation/
+research/fixtures/*.mp4
+research/fixtures/*.m3u8
+research/fixtures/*.ts
+releases/
+
+**/__pycache__/
+*.pyc
+
+app/build-family-upgrade/
+
+# Private catalogs, deployment tools, historical probes and device evidence.
+local/
+local-tools/
+research/
+
+scripts/fixtures/*.mp4
+scripts/fixtures/*.m3u8
+scripts/fixtures/*.ts

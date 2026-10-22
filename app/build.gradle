@@ -1,0 +1,64 @@
+plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
+
+// Same standalone behavior, with an opt-in identity for replacing the old family client.
+// Separate output directory prevents accidentally packaging the replacement as the coexist build.
+def familyUpgrade = providers.gradleProperty('familyUpgrade').orNull == 'true'
+if (familyUpgrade) layout.buildDirectory.set(file('build-family-upgrade'))
+// No household build inputs or embedded credentials.
+
+
+android {
+    namespace 'family.libretv.tv'
+    compileSdk 35
+    buildToolsVersion '36.0.0'
+    defaultConfig {
+        applicationId 'family.libretv.standalone'
+        if (familyUpgrade) applicationId 'family.libretv.tv'
+        minSdk 24
+        targetSdk 35
+        versionCode 26
+        versionName '0.12.2-standalone'
+        if (familyUpgrade) versionName '0.12.2-independent'
+        buildConfigField 'String', 'DEFAULT_NAS_URL', '""'
+        buildConfigField 'String', 'DEFAULT_NAS_PASSWORD', '""'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+    buildFeatures { buildConfig true }
+    lint { abortOnError true }
+    dependencyLocking { lockAllConfigurations() }
+}
+
+dependencies {
+    implementation project(':upnpcast')
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
+    implementation 'androidx.media3:media3-exoplayer:1.9.4'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.9.4'
+    implementation 'androidx.media3:media3-ui:1.9.4'
+    implementation 'com.google.zxing:core:3.3.3'
+    implementation 'androidx.core:core:1.8.0'
+    implementation 'androidx.recyclerview:recyclerview:1.3.0'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+}
+
+// Only local builds opt into the ignored catalog. CI/public builds can force an empty catalog.
+def includeLocalSources = providers.gradleProperty('includeLocalSources').orElse('true')
+def sourceCatalog = rootProject.file('local/default-sources.json')
+def generatedSourceAssets = layout.buildDirectory.dir('generated/sourceAssets')
+def prepareSourceAssets = tasks.register('prepareSourceAssets') {
+    inputs.property('includeLocalSources', includeLocalSources)
+    inputs.files(provider { includeLocalSources.get() == 'true' && sourceCatalog.exists() ? [sourceCatalog] : [] })
+    outputs.dir(generatedSourceAssets)
+    doLast {
+        def output = generatedSourceAssets.get().file('default-sources.json').asFile
+        output.parentFile.mkdirs()
+        output.text = includeLocalSources.get() == 'true' && sourceCatalog.exists() ? sourceCatalog.getText('UTF-8') : '{"sources":[]}'
+    }
+}
+android.sourceSets.main.assets.srcDir(generatedSourceAssets)
+tasks.named('preBuild').configure { dependsOn(prepareSourceAssets) }
