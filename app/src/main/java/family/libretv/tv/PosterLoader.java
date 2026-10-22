@@ -39,6 +39,9 @@ final class PosterLoader {
         HttpURLConnection connection = null;
         try {
             connection = client.open(client.proxy(url));
+            String host=java.net.URI.create(url).getHost();
+            if(client.local!=null && host!=null && (host.equals("doubanio.com") || host.endsWith(".doubanio.com")))
+                connection.setRequestProperty("Referer","https://movie.douban.com/");
             connection.setReadTimeout(12000);
             if (connection.getResponseCode() != 200) return null;
             byte[] data;

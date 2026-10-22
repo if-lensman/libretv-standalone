@@ -84,6 +84,9 @@ class PhoneActivity : Activity() {
     private var dialog: AlertDialog? = null
 
     private val liveRepository by lazy { LiveRepository(this) }
+    private val recommendations by lazy { RecommendationRepository(this) }
+    private var recommendationJob: Job? = null
+    private var recommendationCategory = "movie"
     private var liveRefreshJob: Job? = null
     private var liveGroup = "全部"
     private var liveSelected = ""
@@ -107,6 +110,7 @@ class PhoneActivity : Activity() {
         setPadding(dp(2), dp(5), dp(2), dp(5))
     }
     private fun screen(name: String, heading: String) {
+        recommendationJob?.cancel()
         generation++; busy = false; page = name; polling?.cancel(); progress = null
         scroll = ScrollView(this).apply { isFillViewport = true; setBackgroundColor(backgroundColor); clipToPadding = false }
         content = LinearLayout(this).apply {
@@ -114,9 +118,9 @@ class PhoneActivity : Activity() {
         }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(backgroundColor) }
         scroll.addView(content); root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
-        val tab = when(name) { "live" -> "直播"; "history","favorites","playlist" -> "历史"; "settings","config","live-sources" -> "设置"; else -> "搜索" }
+        val tab = when(name) { "home","recommendations" -> "首页"; "live" -> "直播"; "history","favorites","playlist" -> "历史"; "settings","config","live-sources" -> "设置"; else -> "搜索" }
         val navigation = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(6),dp(5),dp(6),dp(5)); setBackgroundColor(Color.rgb(13,19,29)); elevation=dp(6).toFloat() }
-        val tabs=listOf("搜索" to R.drawable.ic_nav_search,"直播" to R.drawable.ic_nav_live,"历史" to R.drawable.ic_nav_history,"设置" to R.drawable.ic_nav_settings)
+        val tabs=listOf("首页" to R.drawable.ic_nav_home,"搜索" to R.drawable.ic_nav_search,"直播" to R.drawable.ic_nav_live,"历史" to R.drawable.ic_nav_history,"设置" to R.drawable.ic_nav_settings)
         tabs.forEach { (label,icon) ->
             val selected=label==tab
             val entry=Button(this).apply {
@@ -125,7 +129,7 @@ class PhoneActivity : Activity() {
                 background=surface(if(selected)Color.rgb(39,25,41) else Color.rgb(13,19,29),12)
                 setCompoundDrawablesWithIntrinsicBounds(null,getDrawable(icon)?.mutate()?.apply { setTint(if(selected)accentColor else secondaryColor) },null,null)
                 compoundDrawablePadding=dp(3); isSelected=selected; contentDescription="底部导航 · $label"
-                setOnClickListener { if(!busy) { hideKeyboard(); when(label) { "搜索" -> home(); "直播" -> liveScreen(); "历史" -> historyScreen(); "设置" -> settingsScreen() } } }
+                setOnClickListener { if(!busy) { hideKeyboard(); when(label) { "首页" -> home(); "搜索" -> searchLanding(); "直播" -> liveScreen(); "历史" -> historyScreen(); "设置" -> settingsScreen() } } }
             }
             navigation.addView(entry,LinearLayout.LayoutParams(0,dp(62),1f))
         }
@@ -345,8 +349,96 @@ class PhoneActivity : Activity() {
     private fun deviceButton(parent: LinearLayout) {
         button(device?.let { "投屏设备 · ${it.name}" } ?: "选择投屏设备", parent) { chooseDevice() }
     }
+    private fun homeSearchBox() {
+        val row = buttonRow(content)
+        val field = input("搜索电影、电视剧", "", parent=row).apply {
+            layoutParams=LinearLayout.LayoutParams(0,dp(54),1f); imeOptions=EditorInfo.IME_ACTION_SEARCH
+            contentDescription="首页搜索片名"
+        }
+        fun submit() {
+            val keyword=field.text.toString().trim()
+            if(keyword.isEmpty() || keyword.length>100) { notice.text="请输入 1–100 字片名"; return }
+            query=keyword; hideKeyboard(); startSearch()
+        }
+        button("搜索",row,true) {submit()}.layoutParams=LinearLayout.LayoutParams(dp(72),dp(48)).apply {leftMargin=dp(8)}
+        field.setOnEditorActionListener { _,action,_ -> if(action==EditorInfo.IME_ACTION_SEARCH) {submit();true} else false }
+    }
     private fun home() {
-        screen("home", "LibreTV")
+        screen("home","LibreTV")
+        (content.getChildAt(0) as? TextView)?.apply {
+            textSize=32f; setPadding(dp(2),dp(10),0,dp(16))
+            paint.shader=android.graphics.LinearGradient(0f,0f,dp(180).toFloat(),0f,intArrayOf(Color.rgb(30,208,234),accentColor),null,android.graphics.Shader.TileMode.CLAMP)
+        }
+        homeSearchBox()
+        val categories=HorizontalScrollView(this).apply {isHorizontalScrollBarEnabled=false}
+        val chips=LinearLayout(this); categories.addView(chips); content.addView(categories)
+        listOf("movie" to "电影","tv" to "电视剧","show" to "综艺","anime" to "动漫").forEach { (key,label) ->
+            button(label,chips,key==recommendationCategory) {recommendationCategory=key;home()}.layoutParams=LinearLayout.LayoutParams(dp(90),dp(48)).apply {setMargins(0,dp(12),dp(8),dp(12))}
+        }
+        if(!recommendations.enabled()) {
+            content.addView(text("推荐已关闭，随时可以搜索想看的影片。",14f).apply {setTextColor(secondaryColor)})
+            return
+        }
+        val categoriesToLoad=if(recommendationCategory=="movie") listOf("movie","top") else listOf(recommendationCategory)
+        val groups=categoriesToLoad.associateWith {category ->
+            val holder=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL};content.addView(holder);holder
+        }
+        val token=generation
+        recommendationJob=scope.launch {
+            categoriesToLoad.map { category -> launch {
+                val holder=groups.getValue(category)
+                val cached=withContext(Dispatchers.IO) {recommendations.cached(category)}
+                if(token!=generation)return@launch
+                renderRecommendationRow(holder,category,cached,if(cached.length()==0) "正在找好片…" else "")
+                try {
+                    val items=runInterruptible(Dispatchers.IO) {recommendations.load(category)}
+                    if(token==generation && (cached.length()==0 || items.toString()!=cached.toString()))renderRecommendationRow(holder,category,items,"")
+                } catch(e: CancellationException) {throw e}
+                catch(e: Exception) {
+                    if(token==generation)renderRecommendationRow(holder,category,cached,if(cached.length()>0) "暂时无法更新，显示上次片单" else "片单暂时无法加载，仍可使用搜索")
+                }
+            }}.joinAll()
+        }
+    }
+    private fun recommendationCard(item: JSONObject, parent: LinearLayout, width: Int) {
+        val card=LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL; background=surface(Color.rgb(13,19,29),12);clipToOutline=true
+            isFocusable=true;isClickable=true;contentDescription="搜索影片 · ${item.optString("title")}"
+            setOnClickListener {query=item.optString("title");startSearch()}
+        }
+        parent.addView(card,LinearLayout.LayoutParams(dp(width),-2).apply {rightMargin=dp(10)})
+        val image=FrameLayout(this);card.addView(image,LinearLayout.LayoutParams(-1,dp(width*3/2)))
+        val cover=ImageView(this).apply {scaleType=ImageView.ScaleType.CENTER_CROP;importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO}
+        image.addView(cover,FrameLayout.LayoutParams(-1,-1));posters.load(cover,client,item.optString("cover"))
+        val rating=item.optString("rating")
+        if(rating.isNotEmpty()) image.addView(text("★ $rating",14f).apply {setTextColor(Color.rgb(255,214,90));setBackgroundColor(0xb3000000.toInt());setPadding(dp(6),dp(2),dp(6),dp(2))},FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.START))
+        card.addView(text(item.optString("title"),14f).apply {maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(dp(8),dp(10),dp(8),dp(10))},LinearLayout.LayoutParams(-1,dp(44)))
+    }
+    private fun renderRecommendationRow(holder: LinearLayout, category: String, items: JSONArray, hint: String) {
+        holder.removeAllViews()
+        val heading=buttonRow(holder).apply {gravity=Gravity.CENTER_VERTICAL;setPadding(0,dp(14),0,dp(8))}
+        heading.addView(text(RecommendationRepository.label(category),22f).apply {setTypeface(typeface,Typeface.BOLD)},LinearLayout.LayoutParams(0,-2,1f))
+        if(items.length()>0)button("更多 →",heading) {recommendationList(category,items)}.apply {
+            setTextColor(accentColor);background=null;layoutParams=LinearLayout.LayoutParams(dp(86),dp(48))
+        }
+        if(hint.isNotEmpty())holder.addView(text(hint,13f).apply {setTextColor(secondaryColor)})
+        if(items.length()==0) {button("重新加载",holder) {home()};return}
+        val carousel=HorizontalScrollView(this).apply {isHorizontalScrollBarEnabled=false;clipToPadding=false}
+        val row=LinearLayout(this);carousel.addView(row);holder.addView(carousel)
+        for(i in 0 until minOf(items.length(),12))recommendationCard(items.getJSONObject(i),row,132)
+    }
+    private fun recommendationList(category: String, items: JSONArray) {
+        screen("recommendations",RecommendationRepository.label(category))
+        button("返回首页") {home()}
+        val columns=if(resources.configuration.screenWidthDp>=600)4 else 3
+        val width=(resources.configuration.screenWidthDp-36-columns*10)/columns
+        (0 until items.length()).toList().chunked(columns).forEach {indices ->
+            val row=buttonRow(content).apply {setPadding(0,dp(12),0,0)}
+            indices.forEach {recommendationCard(items.getJSONObject(it),row,width)}
+        }
+    }
+    private fun searchLanding() {
+        screen("search-landing", "搜索")
         (content.getChildAt(0) as? TextView)?.apply {
             setTextColor(accentColor); textSize=30f
             paint.shader=android.graphics.LinearGradient(0f,0f,dp(180).toFloat(),0f,intArrayOf(Color.rgb(30,208,234),accentColor),null,android.graphics.Shader.TileMode.CLAMP)
@@ -402,6 +494,9 @@ class PhoneActivity : Activity() {
                 startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),if(which==0)412 else 413)
             }.setNegativeButton("取消",null).show()
         }
+        val homeSettings=section("首页")
+        val showRecommendations=CheckBox(this).apply {text="显示推荐片单";setTextColor(Color.WHITE);isChecked=recommendations.enabled();homeSettings.addView(this)}
+        showRecommendations.setOnCheckedChangeListener { _,enabled -> recommendations.setEnabled(enabled) }
         val playback=section("播放与应用")
         button("投屏设备",playback) { chooseDevice() }
         if(queue!=null) button("投屏控制 · $castTitle",playback) { controls() }
@@ -1023,7 +1118,7 @@ class PhoneActivity : Activity() {
     @Deprecated("Legacy Activity back navigation")
     override fun onBackPressed() {
         if(busy) { notice.text="正在操作，请稍候；退出可使用系统主页键"; return }
-        when(page) { "batch" -> controls(); "controls" -> home(); "detail" -> if(query.isNotEmpty()) searchScreen() else home(); "config","live-sources" -> settingsScreen(); "search", "favorites", "playlist", "history", "live", "settings" -> home(); else -> super.onBackPressed() }
+        when(page) { "batch" -> controls(); "controls" -> home(); "detail" -> if(query.isNotEmpty()) searchScreen() else home(); "config","live-sources" -> settingsScreen(); "search-landing", "recommendations", "search", "favorites", "playlist", "history", "live", "settings" -> home(); else -> super.onBackPressed() }
     }
     override fun onDestroy() {
         dialog?.dismiss(); posters.close(); scope.cancel()

@@ -9,6 +9,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
  def do_GET(self):
   parsed=urllib.parse.urlparse(self.path);q=urllib.parse.parse_qs(parsed.query)
   global LIVE_MODE,LIVE_REVISION
+  if parsed.path=='/recommendations':
+   payload={'subjects':[{'id':str(i),'title':'推荐测试影片 '+str(i),'cover':'http://10.0.2.2:19001/poster.png','rate':'8.5'} for i in range(1,25)]}
+   data=json.dumps(payload).encode();self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
+  if parsed.path=='/recommendations/offline':self.send_error(503);return
   if parsed.path=='/live/control':
    LIVE_MODE=q.get('mode',['normal'])[0];LIVE_REVISION+=1
    data=json.dumps({'mode':LIVE_MODE,'revision':LIVE_REVISION}).encode();self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return

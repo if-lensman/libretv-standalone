@@ -32,7 +32,7 @@ public final class LiveBrowseActivity extends Activity {
         Button filter=button(outer,"频道分组 · "+group,()->new AlertDialog.Builder(this).setTitle("频道分组").setItems(groups.toArray(new String[0]),(d,which)->{group=groups.toArray(new String[0])[which];shown=40;try{render();}catch(Exception ignored){}}).show());
         ScrollView scroll=new ScrollView(this);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);scroll.addView(list);outer.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         int count=0;for(int i=0;i<channels.length();i++){JSONObject channel=channels.getJSONObject(i);String id=channel.getString("id");if(!"全部".equals(group)&&!("收藏".equals(group)&&repository.favorite(id))&&!group.equals(channel.optString("group")))continue;count++;if(count>shown)continue;
-            LinearLayout row=new LinearLayout(this);list.addView(row);Button play=button(row,channel.optString("name"),()->startActivity(new Intent(this,LivePlayerActivity.class).putExtra("channelId",id)));play.setLayoutParams(new LinearLayout.LayoutParams(0,dp(58),4));
+            LinearLayout row=new LinearLayout(this);list.addView(row);Button play=button(row,channel.optString("name"),()->startActivity(new Intent(this,LivePlayerActivity.class).putExtra("channelId",id).putExtra("tvRemote",true)));play.setLayoutParams(new LinearLayout.LayoutParams(0,dp(58),4));
             Button favorite=button(row,repository.favorite(id)?"取消收藏":"收藏",()->{repository.toggleFavorite(id);try{render();}catch(Exception ignored){}});favorite.setLayoutParams(new LinearLayout.LayoutParams(0,dp(58),1));
         }
         if(count>shown)button(list,"更多频道",()->{shown+=40;try{render();}catch(Exception ignored){}});

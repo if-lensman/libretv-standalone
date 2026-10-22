@@ -41,6 +41,7 @@ public final class LivePlayerActivity extends Activity {
     private boolean active,recovering,terminal,waitingNetwork,renderedFrame,started,restoreLine,playAfterRecovery=true;
     private long attemptStarted,firstFrameMs;
     private Runnable retryTask;
+    private boolean tvRemote;
     private String initialError="请先导入直播频道";
     private final Runnable watchdog=new Runnable(){
         @Override public void run(){if(!active)return;samplePlayback();main.postDelayed(this,1000);}
@@ -49,10 +50,12 @@ public final class LivePlayerActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);WindowCompat.setDecorFitsSystemWindows(getWindow(),false);
+        tvRemote=getIntent().getBooleanExtra("tvRemote",false)||((android.app.UiModeManager)getSystemService(UI_MODE_SERVICE)).getCurrentModeType()==android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;
         setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         if(state!=null&&state.containsKey("windowBrightness")){WindowManager.LayoutParams attrs=getWindow().getAttributes();attrs.screenBrightness=state.getFloat("windowBrightness");getWindow().setAttributes(attrs);}
         stage=new PlaybackGestureLayout(this);stage.setBackgroundColor(0xff0c141d);
         video=new PlayerView(this);video.setControllerShowTimeoutMs(3000);stage.addView(video,new FrameLayout.LayoutParams(-1,-1));
+        if(tvRemote){video.setShowRewindButton(false);video.setShowFastForwardButton(false);}
         chrome=new LinearLayout(this);chrome.setOrientation(LinearLayout.VERTICAL);chrome.setPadding(dp(10),dp(4),dp(10),dp(6));chrome.setBackgroundColor(0xd9101723);
         title=new TextView(this);title.setTextColor(0xffffffff);title.setTextSize(18);chrome.addView(title);
         LinearLayout actions=new LinearLayout(this);chrome.addView(actions);
@@ -208,6 +211,15 @@ public final class LivePlayerActivity extends Activity {
             if(cause instanceof javax.net.ssl.SSLException)return new Reason("频道安全连接失败",false,true);
         }
         return new Reason("频道连接中断",false,false);
+    }
+    @Override public boolean dispatchKeyEvent(KeyEvent event){
+        int code=event.getKeyCode();
+        if(tvRemote&&(code==KeyEvent.KEYCODE_DPAD_LEFT||code==KeyEvent.KEYCODE_DPAD_RIGHT)){
+            // Consume DOWN, repeated DOWN and UP before PlayerView can seek or move its time bar.
+            if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0&&!event.isCanceled())switchChannel(code==KeyEvent.KEYCODE_DPAD_LEFT?-1:1);
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
     }
     @Override protected void onSaveInstanceState(Bundle state){state.putFloat("windowBrightness",getWindow().getAttributes().screenBrightness);state.putBoolean("resume",player==null?playAfterRecovery:player.getPlayWhenReady());try{state.putString("channelId",channel().getString("id"));state.putInt("line",lineIndex);}catch(Exception ignored){}super.onSaveInstanceState(state);}
     @Override protected void onStop(){active=false;++ticket;cancelRetry();main.removeCallbacks(watchdog);stage.release();if(pending!=null)pending.cancel(true);if(player!=null){playAfterRecovery=player.getPlayWhenReady();video.setPlayer(null);player.release();player=null;}super.onStop();}
