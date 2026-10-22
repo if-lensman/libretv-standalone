@@ -27,6 +27,10 @@ local/
 local-tools/
 research/
 
+# Local agent collaboration conventions and per-round work records; not published.
+/AGENTS.md
+/worklog/
+
 scripts/fixtures/*.mp4
 scripts/fixtures/*.m3u8
 scripts/fixtures/*.ts

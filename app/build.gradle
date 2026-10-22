@@ -16,9 +16,9 @@ android {
         if (familyUpgrade) applicationId 'family.libretv.tv'
         minSdk 24
         targetSdk 35
-        versionCode providers.gradleProperty('appVersionCode').orElse('35').get().toInteger()
-        versionName '0.15.0-standalone'
-        if (familyUpgrade) versionName '0.15.0-independent'
+        versionCode providers.gradleProperty('appVersionCode').orElse('37').get().toInteger()
+        versionName '0.15.1-standalone'
+        if (familyUpgrade) versionName '0.15.1-independent'
         buildConfigField 'String', 'DEFAULT_NAS_URL', '""'
         buildConfigField 'String', 'DEFAULT_NAS_PASSWORD', '""'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
