@@ -42,5 +42,14 @@ public final class GithubUpdateTest extends TestCase {
         try{updater.download(getInstrumentation().getTargetContext(),new AppUpdater.Release(broken),percent->{});fail("Bad digest accepted");}
         catch(java.io.IOException expectedFailure){assertFalse(apk.exists());}
         updater.download(getInstrumentation().getTargetContext(),release,percent->{});
+        android.content.Context context=getInstrumentation().getTargetContext();
+        context.getSharedPreferences("UpdateActivity",0).edit().putInt("pendingCode",release.code)
+            .putString("pendingSha",release.sha256).putLong("pendingSize",release.size).putBoolean("awaitingPermission",false).commit();
+        for(int i=0;i<2;i++) {
+            android.app.Activity activity=getInstrumentation().startActivitySync(new android.content.Intent(context,UpdateActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+            java.lang.reflect.Field field=UpdateActivity.class.getDeclaredField("pending");field.setAccessible(true);
+            assertNotNull("Downloaded APK lost across Activity restart",field.get(activity));
+            getInstrumentation().runOnMainSync(activity::finish);getInstrumentation().waitForIdleSync();
+        }
     }
 }

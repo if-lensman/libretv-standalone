@@ -49,7 +49,10 @@ public final class UpdateActivity extends Activity {
         status=new TextView(this);content.addView(status);
         check=button(content,"检查更新",this::checkUpdate);
         install=button(content,"安装已下载更新",this::installPending);install.setVisibility(android.view.View.GONE);
-        button(content,"返回",this::finish);check.requestFocus();checkUpdate();
+        button(content,"返回",this::finish);check.requestFocus();
+        if(restorePending()) {
+            if(getPreferences(0).getBoolean("awaitingPermission",false) && (Build.VERSION.SDK_INT<26 || getPackageManager().canRequestPackageInstalls()))installPending();
+        } else checkUpdate();
     }
     private Button button(LinearLayout parent,String title,Runnable action) {
         Button b=new Button(this);b.setText(title);b.setAllCaps(false);b.setFocusableInTouchMode(true);b.setBackgroundResource(R.drawable.focus_button);b.setTextColor(android.graphics.Color.WHITE);
@@ -74,15 +77,32 @@ public final class UpdateActivity extends Activity {
     }
     private void download(AppUpdater.Release release) {
         work("正在下载更新…",()->updater.download(this,release,percent->main.post(()->{if(!dead)status.setText("正在下载 · "+percent+"%");})),file->{
+            getPreferences(0).edit().putInt("pendingCode",release.code).putString("pendingSha",release.sha256).putLong("pendingSize",release.size).commit();
             pending=file;install.setVisibility(android.view.View.VISIBLE);status.setText("下载完成，签名和完整性校验通过");installPending();
         });
+    }
+    private boolean restorePending() {
+        android.content.SharedPreferences prefs=getPreferences(0);
+        File file=new File(getCacheDir(),"updates/update.apk");
+        try {
+            if(!file.isFile() || file.length()!=prefs.getLong("pendingSize",-1))throw new java.io.IOException();
+            java.security.MessageDigest digest=java.security.MessageDigest.getInstance("SHA-256");
+            try(java.io.InputStream in=new java.io.FileInputStream(file)) {
+                byte[] bytes=new byte[32768];int n;while((n=in.read(bytes))!=-1)digest.update(bytes,0,n);
+            }
+            if(!AppUpdater.hex(digest.digest()).equals(prefs.getString("pendingSha","")))throw new java.io.IOException();
+            AppUpdater.validateApk(this,file,prefs.getInt("pendingCode",-1));
+            pending=file;install.setVisibility(android.view.View.VISIBLE);status.setText("已恢复校验通过的安装包，可继续安装");install.requestFocus();return true;
+        } catch(Exception ignored) {prefs.edit().clear().apply();return false;}
     }
     private void installPending() {
         if(pending==null)return;
         try {
             if(Build.VERSION.SDK_INT>=26 && !getPackageManager().canRequestPackageInstalls()) {
+                getPreferences(0).edit().putBoolean("awaitingPermission",true).commit();
                 startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName())),71);return;
             }
+            getPreferences(0).edit().putBoolean("awaitingPermission",false).commit();
             UpdateInstaller.install(this,pending);
         }catch(Exception e){status.setText("无法打开安装器："+e.getMessage());}
     }
