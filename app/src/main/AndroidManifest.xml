@@ -15,6 +15,8 @@
         <activity android:name=".UpdateActivity" android:exported="false" />
         <activity android:name=".LegacyUpdateActivity" android:exported="false" />
         <activity android:name=".SourceScannerActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name=".LiveBrowseActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".LivePlayerActivity" android:exported="false" />
         <activity android:name=".DirectPlayerActivity" android:exported="false" />
         <activity android:name=".PhoneActivity" android:exported="false" android:screenOrientation="portrait" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape">

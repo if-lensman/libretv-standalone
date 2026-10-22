@@ -16,9 +16,9 @@ android {
         if (familyUpgrade) applicationId 'family.libretv.tv'
         minSdk 24
         targetSdk 35
-        versionCode providers.gradleProperty('appVersionCode').orElse('30').get().toInteger()
-        versionName '0.13.3-standalone'
-        if (familyUpgrade) versionName '0.13.3-independent'
+        versionCode providers.gradleProperty('appVersionCode').orElse('31').get().toInteger()
+        versionName '0.14.0-standalone'
+        if (familyUpgrade) versionName '0.14.0-independent'
         buildConfigField 'String', 'DEFAULT_NAS_URL', '""'
         buildConfigField 'String', 'DEFAULT_NAS_PASSWORD', '""'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
@@ -49,15 +49,18 @@ dependencies {
 // Only local builds opt into the ignored catalog. CI/public builds can force an empty catalog.
 def includeLocalSources = providers.gradleProperty('includeLocalSources').orElse('true')
 def sourceCatalog = rootProject.file('local/default-sources.json')
+def liveCatalog = rootProject.file('local/default-live-sources.json')
 def generatedSourceAssets = layout.buildDirectory.dir('generated/sourceAssets')
 def prepareSourceAssets = tasks.register('prepareSourceAssets') {
     inputs.property('includeLocalSources', includeLocalSources)
     inputs.files(provider { includeLocalSources.get() == 'true' && sourceCatalog.exists() ? [sourceCatalog] : [] })
+    inputs.files(provider { includeLocalSources.get() == 'true' && liveCatalog.exists() ? [liveCatalog] : [] })
     outputs.dir(generatedSourceAssets)
     doLast {
         def output = generatedSourceAssets.get().file('default-sources.json').asFile
         output.parentFile.mkdirs()
         output.text = includeLocalSources.get() == 'true' && sourceCatalog.exists() ? sourceCatalog.getText('UTF-8') : '{"sources":[]}'
+        generatedSourceAssets.get().file('default-live-sources.json').asFile.text = includeLocalSources.get() == 'true' && liveCatalog.exists() ? liveCatalog.getText('UTF-8') : '{"subscriptions":[]}'
     }
 }
 android.sourceSets.main.assets.srcDir(generatedSourceAssets)

@@ -26,6 +26,8 @@ certificates, packages, outputs, codes = set(), set(), [], set()
 for apk in args.apk:
     with zipfile.ZipFile(apk) as archive:
         assert json.loads(archive.read('assets/default-sources.json')) == {'sources': []}, 'Public APK must have zero bundled sources'
+        if 'assets/default-live-sources.json' in archive.namelist():
+            assert json.loads(archive.read('assets/default-live-sources.json')) == {'subscriptions': []}, 'Public APK must have zero bundled live subscriptions'
     signing = subprocess.check_output([str(tools/'apksigner'), 'verify', '--print-certs', str(apk)], text=True)
     certificates.add(re.search(r'Signer #1 certificate SHA-256 digest: (\w+)', signing)[1])
     info = subprocess.check_output([str(tools/'aapt'), 'dump', 'badging', str(apk)], text=True)

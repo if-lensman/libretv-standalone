@@ -269,6 +269,7 @@ public final class MainActivity extends Activity {
         LinearLayout navigation = row(); content.addView(navigation);
         Button library=button(navigation, "本机收藏夹", this::showFavorites);
         button(navigation, "播放列表", this::showPlaylist);
+        button(navigation, "电视直播", ()->startActivity(new android.content.Intent(this,LiveBrowseActivity.class)));
         Button settings = button(navigation, "设置", this::showSettings);
         if (availableUpdate != null) settings.setText("设置 · 有更新");
         settings.setTextSize(16); settings.setHeight(dp(56));

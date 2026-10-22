@@ -74,14 +74,20 @@ class PhoneActivity : Activity() {
     private var pendingExport: String? = null
     private var batchRunning = false
     private var batchStopRequested = false
-    private val backgroundColor = Color.rgb(12, 20, 29)
-    private val panelColor = Color.rgb(24, 37, 50)
-    private val accentColor = Color.rgb(107, 226, 195)
+    private val backgroundColor = Color.rgb(16, 23, 35)
+    private val panelColor = Color.rgb(25, 34, 48)
+    private val accentColor = Color.rgb(241, 91, 155)
     private val secondaryColor = Color.rgb(160, 180, 196)
     private var castDevice: DLNACast.Device? = null
     private var progress: TextView? = null
     private var polling: Job? = null
     private var dialog: AlertDialog? = null
+
+    private val liveRepository by lazy { LiveRepository(this) }
+    private var liveRefreshJob: Job? = null
+    private var liveGroup = "全部"
+    private var liveSelected = ""
+    private var liveVisible = 40
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -106,13 +112,30 @@ class PhoneActivity : Activity() {
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(14), dp(18), dp(24))
         }
-        scroll.addView(content); setContentView(scroll)
-        ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(backgroundColor) }
+        scroll.addView(content); root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
+        val tab = when(name) { "live" -> "直播"; "history","favorites","playlist" -> "历史"; "settings","config","live-sources" -> "设置"; else -> "搜索" }
+        val navigation = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(6),dp(5),dp(6),dp(5)); setBackgroundColor(Color.rgb(13,19,29)); elevation=dp(6).toFloat() }
+        val tabs=listOf("搜索" to R.drawable.ic_nav_search,"直播" to R.drawable.ic_nav_live,"历史" to R.drawable.ic_nav_history,"设置" to R.drawable.ic_nav_settings)
+        tabs.forEach { (label,icon) ->
+            val selected=label==tab
+            val entry=Button(this).apply {
+                text=label; textSize=12f; isAllCaps=false; minWidth=0; minimumWidth=0; minHeight=0; minimumHeight=0
+                setTextColor(if(selected)accentColor else secondaryColor); setPadding(dp(4),dp(6),dp(4),dp(5))
+                background=surface(if(selected)Color.rgb(39,25,41) else Color.rgb(13,19,29),12)
+                setCompoundDrawablesWithIntrinsicBounds(null,getDrawable(icon)?.mutate()?.apply { setTint(if(selected)accentColor else secondaryColor) },null,null)
+                compoundDrawablePadding=dp(3); isSelected=selected; contentDescription="底部导航 · $label"
+                setOnClickListener { if(!busy) { hideKeyboard(); when(label) { "搜索" -> home(); "直播" -> liveScreen(); "历史" -> historyScreen(); "设置" -> settingsScreen() } } }
+            }
+            navigation.addView(entry,LinearLayout.LayoutParams(0,dp(62),1f))
+        }
+        root.addView(navigation,LinearLayout.LayoutParams(-1,-2));setContentView(root)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom)); insets
+            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom)); navigation.visibility=if(insets.isVisible(WindowInsetsCompat.Type.ime())) View.GONE else View.VISIBLE; insets
         }
-        ViewCompat.requestApplyInsets(scroll)
+        ViewCompat.requestApplyInsets(root)
         content.addView(text(heading, 25f).apply { setTypeface(typeface, Typeface.BOLD) })
         notice = text("", 14f).apply {
             setTextColor(accentColor); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
@@ -212,8 +235,8 @@ class PhoneActivity : Activity() {
 
     private fun login(automatic: Boolean = false) {
         screen("config", "来源配置")
-        content.addView(text("内置来源可启停和删除，也可扫码导入自己的源。无需 NAS。", 14f))
-        val box = section("导入订阅 / JSON")
+        content.addView(text("管理影视来源，支持扫码、文件或订阅导入。", 14f))
+        val box = section("导入影视来源")
         button("扫码配置源", box, true) { startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),412) }
         button("显示来源二维码", box) {
             val payload=try { SourceQrDecoder.sharePayload(JSONObject(client.local.exportSources()).toString()) } catch(e: Exception) { notice.text=e.message; return@button }
@@ -232,9 +255,9 @@ class PhoneActivity : Activity() {
         button("从文件导入", box) {
             startActivityForResult(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply { type = "*/*"; addCategory(android.content.Intent.CATEGORY_OPENABLE) }, 410)
         }
-        val manual = section("手动添加 CMS 源")
+        val manual = section("手动添加来源")
         val name = input("源名称", "", parent = manual)
-        val url = input("CMS API 地址", "", parent = manual)
+        val url = input("来源地址", "", parent = manual)
         button("添加来源", manual) {
             val value = JSONObject().put("name", name.text.toString().ifBlank { "自定义源" }).put("url",url.text.toString()).toString()
             work("正在保存…") {
@@ -270,6 +293,21 @@ class PhoneActivity : Activity() {
     @Deprecated("Activity result bridge")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode==413 && resultCode==RESULT_OK) {
+            data?.getStringExtra("sourceConfig")?.let { value ->
+                dialog=AlertDialog.Builder(this).setTitle("添加直播订阅？").setMessage(value.take(400)).setNegativeButton("取消",null).setPositiveButton("添加") { _,_ ->
+                    work("正在保存直播订阅…") { withContext(Dispatchers.IO) { liveRepository.saveSubscription(null,"直播订阅",value) }; liveSourcesScreen(); notice.text="订阅已保存，进入直播后更新频道" }
+                }.show()
+            }
+        }
+        if(requestCode==414 && resultCode==RESULT_OK && data?.data!=null) {
+            val uri=data.data!!
+            work("正在导入频道…") { val count=withContext(Dispatchers.IO) {
+                val display=contentResolver.query(uri,arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),null,null,null)?.use { c-> if(c.moveToFirst()) c.getString(0) else "本地频道" } ?: "本地频道"
+                val input=contentResolver.openInputStream(uri) ?: throw java.io.IOException("无法读取文件")
+                liveRepository.importPlaylist(display,LocalRepository.read(input,M3uPlaylist.MAX_BYTES));liveRepository.channels().length()
+            };liveScreen(false);notice.text="已导入频道，当前共 $count 个" }
+        }
         if(requestCode==412 && resultCode==RESULT_OK) {
             data?.getStringExtra("sourceConfig")?.let { confirmScannedSources(it) }
         }
@@ -308,8 +346,12 @@ class PhoneActivity : Activity() {
         button(device?.let { "投屏设备 · ${it.name}" } ?: "选择投屏设备", parent) { chooseDevice() }
     }
     private fun home() {
-        screen("home", "LibreTV · 选片")
-        content.addView(text("独立运行 · 无需 NAS · ${(0 until sources.length()).count { sources.getJSONObject(it).optBoolean("enabled",true) }} / ${sources.length()} 个来源启用", 14f).apply { setTextColor(secondaryColor) })
+        screen("home", "LibreTV")
+        (content.getChildAt(0) as? TextView)?.apply {
+            setTextColor(accentColor); textSize=30f
+            paint.shader=android.graphics.LinearGradient(0f,0f,dp(180).toFloat(),0f,intArrayOf(Color.rgb(30,208,234),accentColor),null,android.graphics.Shader.TileMode.CLAMP)
+        }
+
         val recent = PlaybackStore(this@PhoneActivity).all().optJSONObject(0)
         if(recent != null) {
             val watching=section("继续观看")
@@ -317,10 +359,7 @@ class PhoneActivity : Activity() {
                 detail(JSONObject(recent.getJSONObject("item").toString()).put("favoriteSource",recent.getJSONObject("source")))
             }
         }
-        val connection = section()
-        deviceButton(connection)
-        if(queue != null) button("投屏控制 · $castTitle", connection, true) { controls() }
-        val searchBox = section("找点想看的")
+        val searchBox = section("搜索电影、电视剧")
         val row = buttonRow(searchBox)
         val keywords = input("搜索电影、剧集", query, parent = row).apply {
             imeOptions = EditorInfo.IME_ACTION_SEARCH
@@ -333,16 +372,159 @@ class PhoneActivity : Activity() {
         }
         button("搜索", row, true) { search() }.layoutParams = LinearLayout.LayoutParams(dp(74), dp(48)).apply { leftMargin = dp(8); topMargin = dp(4) }
         keywords.setOnEditorActionListener { _,action,_ -> if(action == EditorInfo.IME_ACTION_SEARCH) { search(); true } else false }
-        val links = buttonRow(content)
-        rowButton(links, "本机收藏夹") { favorites() }
-        rowButton(links, "来源配置") { login() }
-        button("播放列表", primary = true) { playlistScreen() }
-        button("观看历史") { historyScreen() }
-        button("检查更新") {
-            startActivity(android.content.Intent(this,UpdateActivity::class.java))
+        val utilities=buttonRow(content)
+        rowButton(utilities,"投屏设备") { chooseDevice() }
+        if(queue != null) rowButton(utilities,"投屏控制") { controls() }
+        if(sources.length()==0) {
+            val empty=section("开始找一部想看的")
+            empty.addView(text("先添加影视来源，再搜索片名。",14f).apply {setTextColor(secondaryColor)})
+            button("添加影视来源",empty,true) { login() }
+        } else if(recent==null) {
+            content.addView(text("输入片名即可搜索，结果会陆续显示。",14f).apply {setTextColor(secondaryColor);setPadding(dp(3),dp(22),0,dp(10))})
+        }
+        val saved=client.local.favorites("/api/favorites",null,"GET").optJSONArray("items") ?: JSONArray()
+        if(saved.length()>0) {
+            val box=section("你的收藏")
+            val cards=JSONArray()
+            for(i in 0 until minOf(saved.length(),6)) {val entry=saved.getJSONObject(i);val item=JSONObject(entry.getJSONObject("item").toString()).put("favoriteSource",entry.getJSONObject("source"));cards.put(item)}
+            posterGrid((0 until cards.length()).map { cards.getJSONObject(it) },box)
+            button("查看全部收藏",box) { favorites() }
         }
         if(query.isNotEmpty()) button(if(searching) "查看搜索进度 · ${results.length()} 项" else "查看搜索结果 · ${results.length()} 项") { searchScreen() }
     }
+    private fun settingsScreen() {
+        screen("settings","设置")
+        val sourceSettings=section("内容来源")
+        button("影视来源",sourceSettings) { login() }
+        button("直播订阅",sourceSettings) { liveSourcesScreen() }
+        button("扫码添加来源",sourceSettings) {
+            dialog=AlertDialog.Builder(this).setTitle("添加哪种来源？").setItems(arrayOf("影视来源","直播订阅")) { _,which ->
+                startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),if(which==0)412 else 413)
+            }.setNegativeButton("取消",null).show()
+        }
+        val playback=section("播放与应用")
+        button("投屏设备",playback) { chooseDevice() }
+        if(queue!=null) button("投屏控制 · $castTitle",playback) { controls() }
+        button("检查更新",playback) { startActivity(android.content.Intent(this,UpdateActivity::class.java)) }
+        content.addView(text("来源、收藏和观看记录保存在这台设备上。",13f).apply {setTextColor(secondaryColor);setPadding(dp(3),dp(18),0,0)})
+    }
+    private fun editLiveSubscription(entry: JSONObject?=null, scanned: String?=null) {
+        val form=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(6),dp(18),0)}
+        val name=input("订阅名称",entry?.optString("name") ?: "直播订阅",parent=form)
+        val url=input("M3U 订阅地址",scanned ?: entry?.optString("url") ?: "",parent=form).apply {inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI}
+        dialog=AlertDialog.Builder(this).setTitle(if(entry==null) "添加直播订阅" else "编辑直播订阅").setView(form).setNegativeButton("取消",null)
+            .setPositiveButton("保存") { _,_ ->
+                work("正在保存订阅…") {withContext(Dispatchers.IO) {liveRepository.saveSubscription(entry?.optString("id"),name.text.toString(),url.text.toString())};liveSourcesScreen();notice.text="订阅已保存，进入直播后更新频道"}
+            }.show()
+    }
+    private fun liveSourcesScreen() {
+        screen("live-sources","直播订阅")
+        content.addView(text("订阅地址不变，频道会随列表更新。更新失败时保留上一次的频道和收藏。",14f).apply {setTextColor(secondaryColor)})
+        val imports=section()
+        button("添加直播订阅",imports,true) {editLiveSubscription()}
+        val row=buttonRow(imports)
+        rowButton(row,"扫码添加") {startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),413)}
+        rowButton(row,"导入 M3U 文件") {startActivityForResult(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(android.content.Intent.CATEGORY_OPENABLE),414)}
+        val automatic=CheckBox(this).apply {text="自动更新频道";setTextColor(Color.WHITE);isChecked=liveRepository.automatic();imports.addView(this)}
+        automatic.setOnCheckedChangeListener { _,checked->liveRepository.setAutomatic(checked) }
+        val interval=if(liveRepository.interval()>=24*60*60*1000L) "每天" else "每6小时"
+        button("检查频率 · $interval",imports) {
+            dialog=AlertDialog.Builder(this).setTitle("进入直播时检查更新").setSingleChoiceItems(arrayOf("每6小时","每天"),if(liveRepository.interval()>=24*60*60*1000L)1 else 0) { d,which ->liveRepository.setInterval((if(which==0)6L else 24L)*60*60*1000);d.dismiss();liveSourcesScreen()}.setNegativeButton("取消",null).show()
+        }
+        val all=liveRepository.subscriptions()
+        if(all.length()==0) content.addView(text("还没有直播订阅，添加后即可获取频道。",14f))
+        for(i in 0 until all.length()) {
+            val entry=all.getJSONObject(i);val box=section(entry.optString("name"))
+            val enabled=CheckBox(this).apply {text="启用此订阅";setTextColor(Color.WHITE);isChecked=entry.optBoolean("enabled",true);box.addView(this)}
+            enabled.setOnCheckedChangeListener { _,checked ->liveRepository.enable(entry.getString("id"),checked) }
+            val updated=liveRepository.prefs.getLong("updated-"+entry.getString("id"),0)
+            box.addView(text(if(entry.optString("url").isEmpty()) "本地文件 · 重新导入同名文件可更新" else if(updated>0) "上次更新 · "+android.text.format.DateFormat.format("MM-dd HH:mm",updated) else "首次进入直播时更新",13f).apply {setTextColor(secondaryColor)})
+            if(entry.optString("url").isNotEmpty())button("编辑订阅",box) {editLiveSubscription(entry)}
+            button("删除订阅 · ${entry.optString("name")}",box) {
+                dialog=AlertDialog.Builder(this).setMessage("删除这个直播订阅？下次打开不会自动补回。")
+                    .setNegativeButton("取消",null).setPositiveButton("删除") { _,_->liveRepository.remove(entry.getString("id"));liveSourcesScreen()}.show()
+            }
+        }
+        button("查看直播频道") {liveScreen()}
+    }
+    private fun liveScreen(refresh: Boolean=true) {
+        screen("live","电视直播")
+        val all=liveRepository.channels()
+        if(liveSelected.isEmpty())liveSelected=liveRepository.lastChannel()
+        var selectedChannel=(0 until all.length()).map {all.getJSONObject(it)}.firstOrNull {it.optString("id")==liveSelected}
+        if(selectedChannel==null&&all.length()>0){selectedChannel=all.getJSONObject(0);liveSelected=selectedChannel.getString("id")}
+        val navigation=buttonRow(content)
+        rowButton(navigation,"刷新频道") {refreshLive(true)}
+        rowButton(navigation,"管理订阅") {liveSourcesScreen()}
+        if(selectedChannel!=null) {
+            val selected=selectedChannel
+            val preview=section()
+            preview.addView(text(selected.optString("name"),25f).apply {setTypeface(typeface,Typeface.BOLD)})
+            preview.addView(text("${selected.optString("group")} · 直播",14f).apply {setTextColor(secondaryColor)})
+            val actions=buttonRow(preview)
+            rowButton(actions,"播放直播") {openLive(selected)}
+            rowButton(actions,"投屏") {castLive(selected)}
+        }
+        if(all.length()==0) {
+            val empty=section("看直播，从添加订阅开始")
+            empty.addView(text(if(liveRepository.subscriptions().length()==0) "添加订阅或导入频道文件，就能在这里选台播放。" else "正在等待频道列表。也可以点击刷新频道重试。",14f).apply {setTextColor(secondaryColor)})
+            button("添加直播订阅",empty,true) {editLiveSubscription()}
+            if(refresh)refreshLive(false)
+            return
+        }
+        val groupNames=linkedSetOf("全部","收藏")
+        for(i in 0 until all.length())groupNames.add(all.getJSONObject(i).optString("group","未分组"))
+        if(liveGroup !in groupNames)liveGroup="全部"
+        val groupScroll=HorizontalScrollView(this).apply {isHorizontalScrollBarEnabled=false}
+        val groupRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL};groupScroll.addView(groupRow);content.addView(groupScroll,LinearLayout.LayoutParams(-1,-2).apply {topMargin=dp(12)})
+        groupNames.forEach {label ->button(label,groupRow,liveGroup==label) {liveGroup=label;liveVisible=40;liveScreen(false)}.layoutParams=LinearLayout.LayoutParams(-2,dp(44)).apply {rightMargin=dp(6)} }
+        val filtered=(0 until all.length()).map {all.getJSONObject(it)}.filter {liveGroup=="全部"||(liveGroup=="收藏"&&liveRepository.favorite(it.getString("id")))||it.optString("group")==liveGroup}
+        content.addView(text("${filtered.size} 个频道",13f).apply {setTextColor(secondaryColor)})
+        if(filtered.isEmpty())content.addView(text("还没有收藏频道，勾选频道旁的收藏即可。",14f))
+        val columns=if(resources.configuration.fontScale>1.3f)1 else 2
+        for(chunk in filtered.take(liveVisible).chunked(columns)) {
+            val row=buttonRow(content)
+            for(channel in chunk) {
+                val card=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(8),dp(10),dp(8));background=surface(if(channel.getString("id")==liveSelected)Color.rgb(48,34,52) else panelColor,12)}
+                row.addView(card,LinearLayout.LayoutParams(0,-2,1f).apply {setMargins(dp(3),dp(5),dp(3),0)})
+                button(channel.optString("name"),card) {openLive(channel)}.apply {setTextColor(Color.WHITE);background=surface(panelColor,8);textSize=14f;minHeight=dp(48)}
+                val star=CheckBox(this).apply {text="收藏";textSize=12f;setTextColor(secondaryColor);isChecked=liveRepository.favorite(channel.getString("id"));card.addView(this)}
+                star.setOnCheckedChangeListener { _,_->liveRepository.toggleFavorite(channel.getString("id")) }
+            }
+            repeat(columns-chunk.size) {row.addView(View(this),LinearLayout.LayoutParams(0,1,1f))}
+        }
+        if(filtered.size>liveVisible)button("更多频道") {liveVisible+=40;liveScreen(false)}
+        content.addView(text("频道列表缓存在本机，刷新不会影响正在播放的频道。",12f).apply {setTextColor(secondaryColor);setPadding(dp(3),dp(18),0,0)})
+        if(refresh)refreshLive(false)
+    }
+    private fun openLive(channel: JSONObject) {
+        liveSelected=channel.getString("id");liveRepository.remember(liveSelected)
+        startActivity(android.content.Intent(this,LivePlayerActivity::class.java).putExtra("channelId",liveSelected))
+    }
+    private fun refreshLive(force: Boolean) {
+        if(liveRefreshJob?.isActive==true){if(page=="live")notice.text="频道正在更新，可继续浏览已有频道";return}
+        if(force&&page=="live")notice.text="正在更新频道…"
+        liveRefreshJob=scope.launch {
+            try {
+                val result=withContext(Dispatchers.IO) {liveRepository.refresh(force)}
+                if(page=="live") {liveScreen(false);notice.text=when {result.failed>0->"部分订阅更新失败，保留已有频道，可稍后重试";result.updated>0->"频道已更新";liveRepository.channels().length()==0->"暂未获取频道，请检查订阅或点击刷新";force->"频道列表已是最新";else->""}}
+            }catch(e: CancellationException){throw e}
+            catch(e: Exception){if(page=="live")notice.text="更新未完成，已有频道仍可使用"}
+        }
+    }
+    private fun castLive(channel: JSONObject) {
+        val selectedDevice=device
+        if(selectedDevice==null){chooseDevice {castLive(channel)};return}
+        work("正在发送直播投屏请求…") {
+            val line=channel.getJSONArray("lines").getJSONObject(0)
+            require(LiveRepository.headers(line).isEmpty()) {"这个频道需要额外播放信息，当前请使用本机播放或换一个频道投屏"}
+            val mime=withContext(Dispatchers.IO) {LiveRepository.mime(line)} ?: "video/mp2t"
+            val ok=castCommands.withLock {val target=resolveTarget(selectedDevice);DLNACast.castToDevice(target,CastUrl.direct(line.getString("url"),client.origin),channel.optString("name"),CastOptions(mimeType=mime))}
+            if(ok)attached=false
+            notice.text=if(ok) "已发送直播投屏，请以接收设备播放情况为准" else "设备未接受这个频道，可尝试其他频道或本机播放"
+        }
+    }
+
     private fun startSearch() {
         searchJob?.cancel(); val token = ++searchToken
         val keyword = query
@@ -478,7 +660,10 @@ class PhoneActivity : Activity() {
             .putExtra("source",source.toString()).putExtra("item",selected.toString()))
     }
     private fun historyScreen() {
-        screen("history","观看历史");button("返回选片") { home() }
+        screen("history","观看历史")
+        val navigation=buttonRow(content)
+        rowButton(navigation,"本机收藏夹") { favorites() }
+        rowButton(navigation,"播放列表") { playlistScreen() }
         val history=PlaybackStore(this@PhoneActivity).all()
         if(history.length()==0) content.addView(text("还没有观看记录"))
         for(i in 0 until history.length()) {
@@ -833,12 +1018,12 @@ class PhoneActivity : Activity() {
     override fun onStart() { super.onStart(); startPolling() }
     override fun onResume() {
         super.onResume()
-        if(::client.isInitialized && !busy) when(page) { "detail" -> details(); "home" -> home(); "playlist" -> playlistScreen(); "favorites" -> favorites() }
+        if(::client.isInitialized && !busy) when(page) { "detail" -> details(); "home" -> home(); "playlist" -> playlistScreen(); "favorites" -> favorites(); "live" -> { liveSelected=liveRepository.lastChannel(); liveScreen() }; "settings" -> settingsScreen(); "live-sources" -> liveSourcesScreen() }
     }
     @Deprecated("Legacy Activity back navigation")
     override fun onBackPressed() {
         if(busy) { notice.text="正在操作，请稍候；退出可使用系统主页键"; return }
-        when(page) { "batch" -> controls(); "controls" -> home(); "detail" -> if(query.isNotEmpty()) searchScreen() else home(); "search", "favorites", "playlist", "config", "history" -> home(); else -> super.onBackPressed() }
+        when(page) { "batch" -> controls(); "controls" -> home(); "detail" -> if(query.isNotEmpty()) searchScreen() else home(); "config","live-sources" -> settingsScreen(); "search", "favorites", "playlist", "history", "live", "settings" -> home(); else -> super.onBackPressed() }
     }
     override fun onDestroy() {
         dialog?.dismiss(); posters.close(); scope.cancel()
