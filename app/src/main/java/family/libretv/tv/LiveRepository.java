@@ -94,11 +94,32 @@ final class LiveRepository {
     void toggleFavorite(String id){synchronized(LOCK){Set<String> set=new HashSet<>(prefs.getStringSet("favorites",Collections.emptySet()));if(!set.remove(id))set.add(id);prefs.edit().putStringSet("favorites",set).commit();}}
     void remember(String id){prefs.edit().putString("lastChannel",id).apply();}
     String lastChannel(){return prefs.getString("lastChannel","");}
+    private static String lineKey(JSONObject line)throws Exception{return LocalRepository.key(line.optString("url")+"|"+line.optString("userAgent")+"|"+line.optString("referer"));}
+    int preferredLine(JSONObject channel,long now)throws Exception {
+        JSONArray lines=channel.getJSONArray("lines");JSONObject health=new JSONObject(prefs.getString("health-"+channel.getString("id"),"{}"));
+        int preferred=-1,available=-1;
+        for(int i=0;i<lines.length();i++){
+            String key=lineKey(lines.getJSONObject(i));boolean usable=health.optLong("cooldown-"+key,0)<=now;
+            if(usable&&available<0)available=i;
+            if(key.equals(health.optString("preferred")))preferred=i;
+        }
+        if(preferred>=0&&health.optLong("cooldown-"+lineKey(lines.getJSONObject(preferred)),0)<=now)return preferred;
+        return available>=0?available:Math.max(0,preferred);
+    }
+    void markLineFailed(JSONObject channel,int index,long now)throws Exception {
+        synchronized(LOCK){String key="health-"+channel.getString("id");JSONObject health=new JSONObject(prefs.getString(key,"{}"));health.put("cooldown-"+lineKey(channel.getJSONArray("lines").getJSONObject(index)),now+10*60*1000L);prefs.edit().putString(key,health.toString()).apply();}
+    }
+    void markLineStable(JSONObject channel,int index,long startupMs)throws Exception {
+        synchronized(LOCK){String key="health-"+channel.getString("id"),line=lineKey(channel.getJSONArray("lines").getJSONObject(index));JSONObject health=new JSONObject(prefs.getString(key,"{}"));health.put("preferred",line).put("startupMs",startupMs).put("lastSuccess",System.currentTimeMillis()).remove("cooldown-"+line);prefs.edit().putString(key,health.toString()).apply();}
+    }
     static Map<String,String> headers(JSONObject line){Map<String,String> result=new HashMap<>();String ua=line.optString("userAgent"),ref=line.optString("referer");if(!ua.isEmpty())result.put("User-Agent",ua);if(!ref.isEmpty())result.put("Referer",ref);return result;}
+    static final class StreamHttpException extends IOException {
+        final int status;StreamHttpException(int status){super("频道请求失败（HTTP "+status+"）");this.status=status;}
+    }
     static String mime(JSONObject line)throws Exception {
         String url=line.getString("url");LocalRepository.validate(url);
         if(URI.create(url).getPath().toLowerCase(Locale.ROOT).endsWith(".m3u8"))return androidx.media3.common.MimeTypes.APPLICATION_M3U8;
         HttpURLConnection conn=LocalRepository.open(URI.create(url));for(Map.Entry<String,String> h:headers(line).entrySet())conn.setRequestProperty(h.getKey(),h.getValue());conn.setRequestProperty("Range","bytes=0-1023");
-        try{int status=conn.getResponseCode();if(status<200||status>=300)throw new IOException("频道暂时无法播放，请重试或换线路");String type=conn.getContentType();if(type!=null&&type.toLowerCase(Locale.ROOT).contains("mpegurl"))return androidx.media3.common.MimeTypes.APPLICATION_M3U8;try(InputStream in=conn.getInputStream()){byte[] b=new byte[1024];int n=in.read(b);if(n>0&&new String(b,0,n,java.nio.charset.StandardCharsets.UTF_8).trim().startsWith("#EXTM3U"))return androidx.media3.common.MimeTypes.APPLICATION_M3U8;}return null;}finally{conn.disconnect();}
+        try{int status=conn.getResponseCode();if(status<200||status>=300)throw new StreamHttpException(status);String type=conn.getContentType();if(type!=null&&type.toLowerCase(Locale.ROOT).contains("mpegurl"))return androidx.media3.common.MimeTypes.APPLICATION_M3U8;try(InputStream in=conn.getInputStream()){byte[] b=new byte[1024];int n=in.read(b);if(n>0&&new String(b,0,n,java.nio.charset.StandardCharsets.UTF_8).trim().startsWith("#EXTM3U"))return androidx.media3.common.MimeTypes.APPLICATION_M3U8;}return null;}finally{conn.disconnect();}
     }
 }

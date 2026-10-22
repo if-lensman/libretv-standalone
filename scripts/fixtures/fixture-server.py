@@ -12,6 +12,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
   if parsed.path=='/live/control':
    LIVE_MODE=q.get('mode',['normal'])[0];LIVE_REVISION+=1
    data=json.dumps({'mode':LIVE_MODE,'revision':LIVE_REVISION}).encode();self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
+  if parsed.path=='/live/failure-list':
+   kind=q.get('case',['failover'])[0]
+   first='/live/slow.m3u8' if kind=='slow' else '/live/reject.m3u8'
+   second='/live/missing.m3u8' if kind=='allbad' else '/live/stream'
+   text='#EXTM3U\n'
+   for url in [first,second]:text+='#EXTINF:-1 tvg-id="recovery-test" group-title="测试",容错测试频道\nhttp://10.0.2.2:19001'+url+'\n'
+   text+='#EXTINF:-1 tvg-id="healthy-test" group-title="测试",稳定对照频道\nhttp://10.0.2.2:19001/live/stream\n'
+   data=text.encode();self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
+  if parsed.path=='/live/reject.m3u8':self.send_error(403);return
+  if parsed.path=='/live/missing.m3u8':self.send_error(404);return
+  if parsed.path=='/live/slow.m3u8':
+   time.sleep(40)
+   try:self.send_error(503)
+   except (BrokenPipeError,ConnectionResetError):pass
+   return
   if parsed.path in ('/live/list','/live/delayed'):
    if parsed.path=='/live/delayed':time.sleep(2)
    lines=['#EXTM3U','#EXTINF:-1 tvg-id="更新时间" group-title="更新时间",2026-10-22 12:00','#EXTGRP:更新时间','http://10.0.2.2:19001/sample.mp4']
@@ -28,7 +43,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
    if LIVE_MODE=='offline':self.send_error(503);return
    segment_files=sorted((ROOT/'live-media').glob('part*.ts'))
    if not segment_files:self.send_error(503);return
-   sequence=int((time.monotonic()-LIVE_STARTED)//2);prefix='/live/header/' if 'header' in parsed.path else '/live/media/'
+   sequence=int((time.monotonic()-LIVE_STARTED)//2)+(1000 if LIVE_MODE=='jump' else 0);prefix='/live/header/' if 'header' in parsed.path else '/live/media/'
    lines=['#EXTM3U','#EXT-X-VERSION:3','#EXT-X-TARGETDURATION:2','#EXT-X-MEDIA-SEQUENCE:'+str(sequence),'#EXT-X-DISCONTINUITY-SEQUENCE:'+str(sequence//len(segment_files))]
    for i in range(sequence,sequence+4):
     if i>sequence and i%len(segment_files)==0:lines.append('#EXT-X-DISCONTINUITY')
