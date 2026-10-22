@@ -12,6 +12,7 @@
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths" />
         </provider>
+        <activity android:name=".UpdateActivity" android:exported="false" />
         <activity android:name=".LegacyUpdateActivity" android:exported="false" />
         <activity android:name=".SourceScannerActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name=".DirectPlayerActivity" android:exported="false" />

@@ -90,6 +90,7 @@ class PhoneActivity : Activity() {
         castOwner = java.lang.ref.WeakReference(this)
         try { client = NasClient(this); sources = client.local.sources(); restoreCast(); home() }
         catch(e: Exception) { login(); notice.text = e.message }
+        UpdateActivity.checkInBackground(this)
     }
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
     private fun surface(color: Int = panelColor, radius: Int = 16) = GradientDrawable().apply {
@@ -337,8 +338,8 @@ class PhoneActivity : Activity() {
         rowButton(links, "来源配置") { login() }
         button("播放列表", primary = true) { playlistScreen() }
         button("观看历史") { historyScreen() }
-        if(BuildConfig.APPLICATION_ID == "family.libretv.tv") button("应用更新（可选 NAS）") {
-            startActivity(android.content.Intent(this,LegacyUpdateActivity::class.java))
+        button("检查更新") {
+            startActivity(android.content.Intent(this,UpdateActivity::class.java))
         }
         if(query.isNotEmpty()) button(if(searching) "查看搜索进度 · ${results.length()} 项" else "查看搜索结果 · ${results.length()} 项") { searchScreen() }
     }

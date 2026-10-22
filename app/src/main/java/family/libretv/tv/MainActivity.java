@@ -105,6 +105,7 @@ public final class MainActivity extends Activity {
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         try { client=new NasClient(this); sources=client.local.sources(); loadSourceSelection(); showSearch(); }
         catch(Exception e) { showConfig(); setNotice(e.getMessage()); }
+        UpdateActivity.checkInBackground(this);
     }
     private boolean hasHouseholdPassword() {
         return !BuildConfig.DEFAULT_NAS_PASSWORD.isEmpty()
@@ -399,7 +400,7 @@ public final class MainActivity extends Activity {
         page(Screen.SETTINGS,"LibreTV · 来源设置");
         button(content,"返回选片",this::showSearch);
         button(content,"添加来源 / 扫码导入",this::showConfig);
-        if(BuildConfig.APPLICATION_ID.equals("family.libretv.tv")) button(content,"应用更新（可选 NAS）",()->startActivity(new android.content.Intent(this,LegacyUpdateActivity.class)));
+        button(content,"检查更新",()->startActivity(new android.content.Intent(this,UpdateActivity.class)));
         content.addView(label("共 "+sources.length()+" 个来源，收藏只保存在本机。",17));
         for(int i=0;i<sources.length();i++){
             JSONObject source=sources.optJSONObject(i);String key=source.optString("key");

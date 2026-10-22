@@ -12,18 +12,21 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
 
-/** The only cross-port session use: same NAS host/scheme, fixed private update port 8898. */
+/** GitHub Releases updater, with the private NAS transport retained for existing installations. */
 @SuppressWarnings("deprecation")
 final class AppUpdater {
+    static final String REPOSITORY = "https://github.com/if-lensman/libretv-standalone";
     static final long MAX_APK = 100L * 1024 * 1024;
     final NasClient nas;
     final URI origin;
     static final class Release {
         final int code;
-        final String name, sha256, notes;
+        final String name, sha256, notes, downloadUrl;
         final long size;
         Release(JSONObject json) throws Exception {
             code = json.getInt("versionCode"); name = json.getString("versionName");
+            downloadUrl = json.optString("downloadUrl", "");
+            if (!downloadUrl.isEmpty()) validateGithubAsset(downloadUrl);
             sha256 = json.getString("sha256"); size = json.getLong("size"); notes = json.optString("notes", "");
             if (!BuildConfig.APPLICATION_ID.equals(json.getString("packageName")) || code < 1
                     || !sha256.matches("[a-f0-9]{64}") || size < 1 || size > MAX_APK
@@ -31,11 +34,42 @@ final class AppUpdater {
                 throw new IOException("更新信息不适用于本设备");
         }
     }
+    AppUpdater() { nas = null; origin = URI.create(REPOSITORY + "/releases/latest/download/"); }
     AppUpdater(NasClient nas) throws Exception {
         this.nas = nas;
         origin = new URI(nas.origin.getScheme(), null, nas.origin.getHost(), 8898, "/", null, null);
     }
+    static URI validateGithubAsset(String url) throws IOException {
+        URI uri;
+        try { uri = URI.create(url); } catch (IllegalArgumentException e) { throw new IOException("更新下载地址无效", e); }
+        if (!"https".equals(uri.getScheme()) || !"github.com".equals(uri.getHost()) || uri.getPort()!=-1
+                || uri.getRawUserInfo()!=null || uri.getFragment()!=null || uri.getQuery()!=null
+                || !uri.getPath().startsWith("/if-lensman/libretv-standalone/releases/download/")
+                || !uri.getPath().endsWith(".apk") || uri.getPath().contains("/../"))
+            throw new IOException("更新下载地址不属于本项目 Release");
+        return uri;
+    }
+    private static HttpURLConnection githubConnection(URI uri) throws Exception {
+        for (int i=0;i<6;i++) {
+            String host=uri.getHost();
+            if (!"https".equals(uri.getScheme()) || uri.getRawUserInfo()!=null || uri.getPort()!=-1
+                    || !("github.com".equals(host) || "release-assets.githubusercontent.com".equals(host) || "objects.githubusercontent.com".equals(host)))
+                throw new IOException("更新服务重定向地址无效");
+            HttpURLConnection conn=(HttpURLConnection)uri.toURL().openConnection();
+            conn.setInstanceFollowRedirects(false);conn.setConnectTimeout(8000);conn.setReadTimeout(20000);
+            conn.setRequestProperty("User-Agent","LibreTV-Standalone/"+BuildConfig.VERSION_NAME);
+            int status=conn.getResponseCode();
+            if(status==301 || status==302 || status==303 || status==307 || status==308) {
+                String next=conn.getHeaderField("Location");conn.disconnect();
+                if(next==null)throw new IOException("更新服务重定向缺少地址");
+                uri=uri.resolve(next);continue;
+            }
+            return conn;
+        }
+        throw new IOException("更新服务重定向过多");
+    }
     private HttpURLConnection open(String path) throws Exception {
+        if (nas == null) return githubConnection(origin.resolve(path));
         if (BuildConfig.APPLICATION_ID.equals("family.libretv.standalone"))
             throw new IOException("独立研究版已禁用家庭 NAS 更新通道");
         HttpURLConnection conn = (HttpURLConnection) origin.resolve(path).toURL().openConnection();
@@ -44,12 +78,14 @@ final class AppUpdater {
         return conn;
     }
     Release check() throws Exception {
-        HttpURLConnection conn = open("/latest.json");
+        HttpURLConnection conn = open(nas == null ? "update-"+BuildConfig.APPLICATION_ID+".json" : "/latest.json");
         try {
             requireOk(conn);
             try (InputStream in = conn.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
                 copy(in, out, 65536);
-                return new Release(new JSONObject(new String(out.toByteArray(), StandardCharsets.UTF_8)));
+                Release release = new Release(new JSONObject(new String(out.toByteArray(), StandardCharsets.UTF_8)));
+                if (nas == null && release.downloadUrl.isEmpty()) throw new IOException("Release 缺少安装包地址");
+                return release;
             }
         } finally { conn.disconnect(); }
     }
@@ -59,7 +95,7 @@ final class AppUpdater {
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("无法创建更新目录");
         File partial = new File(dir, "download.part"), apk = new File(dir, "update.apk");
         if (apk.exists() && !apk.delete()) throw new IOException("无法清理旧安装包");
-        HttpURLConnection conn = open("/apk/" + release.code + ".apk");
+        HttpURLConnection conn = nas == null ? githubConnection(validateGithubAsset(release.downloadUrl)) : open("/apk/" + release.code + ".apk");
         boolean complete = false;
         try {
             requireOk(conn);
