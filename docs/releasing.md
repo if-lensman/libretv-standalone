@@ -30,7 +30,9 @@ python3 scripts/sync-gitee-updates.py --directory releases/<version>-public --pu
 
 脚本独立验证公开产物，并使用临时 Git index 将文件写入 `updates` 分支，不改工作区、源码分支或暂存区；保留此前版本 APK，防止客户端读取旧清单后下载失败。脚本访问 Gitee 默认直连，不继承本机 HTTP 代理。随后匿名回下载清单及 APK，对比完整哈希。只在验证成功后宣称镜像可用。旧 APK 会占用仓库空间，后续清理须考虑仍在使用旧清单的客户端。
 
-固定清单地址：`https://gitee.com/xdmdpz/libretv-standalone/raw/updates/update-family.libretv.standalone.json`。APK 同目录，以 `LibreTV-<version>.apk` 命名。清单中仍保留本项目 GitHub 官方文件地址，App 将受限文件名映射到 Gitee；不将任意第三方清单 URL 当成可信下载地址。
+App 清单 API：`https://gitee.com/api/v5/repos/xdmdpz/libretv-standalone/contents/update-family.libretv.standalone.json?ref=updates`，读取 `encoding=base64` 与 `content`，解码后仍执行原清单校验。
+
+手动备用的固定清单地址：`https://gitee.com/xdmdpz/libretv-standalone/raw/updates/update-family.libretv.standalone.json`。APK 同目录，以 `LibreTV-<version>.apk` 命名。清单中仍保留本项目 GitHub 官方文件地址。0.16.3起 App 通过 Gitee Contents API 获取清单并解码 Base64，APK 映射到对应版本的正式发行版附件，跟随受限的 `foruda.gitee.com` HTTPS 跳转；避免依赖部分网络不可达的 Raw 域名。不将任意第三方清单 URL 当成可信下载地址。发布下载分支及正式发行版均完成后，才算 Gitee App 更新链路发布完成；下载分支的 Raw 文件仍可作为手动下载备用。
 
 该分支是下载镜像，**不等于 Gitee 网页上的正式发行版条目**。源码 main、标签、下载分支和正式发行版需要分别验证。
 

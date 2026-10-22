@@ -12,7 +12,7 @@ import java.security.MessageDigest;
 import java.util.*;
 
 /** Fault injection uses only synthetic metadata and an opt-in, signed local candidate APK. */
-@androidx.annotation.RequiresApi(26)
+@androidx.test.filters.SdkSuppress(minSdkVersion=26)
 public final class UpdateFallbackTest extends TestCase {
     private final List<String> calls=new ArrayList<>();
     private JSONObject metadata(byte[] bytes,int code)throws Exception {
@@ -58,8 +58,15 @@ public final class UpdateFallbackTest extends TestCase {
         assertEquals(Arrays.asList("direct","gitee.com",URI.create(AppUpdater.DEFAULT_PROXY).getHost(),URI.create(AppUpdater.SECOND_PROXY).getHost()),calls);
     }
     public void testGiteeMappingOnlyAcceptsThisProjectsUpdateFiles()throws Exception {
-        assertEquals(AppUpdater.GITEE_MIRROR+"LibreTV-0.16.2.apk",AppUpdater.mirrorTarget(URI.create(AppUpdater.REPOSITORY+"/releases/download/v0.16.2/LibreTV-0.16.2.apk")).toString());
+        assertEquals(AppUpdater.GITEE_MIRROR+"releases/download/v0.16.2/LibreTV-0.16.2.apk",AppUpdater.mirrorTarget(URI.create(AppUpdater.REPOSITORY+"/releases/download/v0.16.2/LibreTV-0.16.2.apk")).toString());
         try{AppUpdater.mirrorTarget(URI.create("https://github.com/other/project/releases/download/v1/app.apk"));fail();}catch(IOException expected){}
+    }
+    public void testGiteeApiManifestDecodesBase64WithoutRawHost()throws Exception {
+        JSONObject metadata=metadata(new byte[]{1},43);
+        byte[] api=new JSONObject().put("encoding","base64").put("content",android.util.Base64.encodeToString(metadata.toString().getBytes(StandardCharsets.UTF_8),android.util.Base64.DEFAULT)).toString().getBytes(StandardCharsets.UTF_8);
+        AppUpdater updater=new AppUpdater("gitee","",(uri,proxy)->response(uri,api,200));
+        assertEquals(43,updater.check().code);
+        assertEquals("gitee.com",AppUpdater.mirrorTarget(URI.create(AppUpdater.REPOSITORY+"/releases/latest/download/update-"+BuildConfig.APPLICATION_ID+".json")).getHost());
     }
     public void testProxyPrefixValidation()throws Exception {
         assertEquals("https://mirror.example/path/",AppUpdater.validateProxy("https://mirror.example/path").toString());

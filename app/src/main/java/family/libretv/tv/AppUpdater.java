@@ -17,7 +17,7 @@ import java.util.*;
 final class AppUpdater {
     static final String REPOSITORY = "https://github.com/if-lensman/libretv-standalone";
     static final long MAX_APK = 100L * 1024 * 1024;
-    static final String GITEE_MIRROR = "https://gitee.com/xdmdpz/libretv-standalone/raw/updates/";
+    static final String GITEE_MIRROR = "https://gitee.com/xdmdpz/libretv-standalone/";
     static final String DEFAULT_PROXY = "https://ghfast.top/";
     static final String SECOND_PROXY = "https://gh-proxy.org/";
     interface Connector { HttpURLConnection open(URI target, URI proxy) throws Exception; }
@@ -93,8 +93,11 @@ final class AppUpdater {
     static URI mirrorTarget(URI target)throws IOException {
         if(!"github.com".equals(target.getHost())||!target.getPath().startsWith("/if-lensman/libretv-standalone/releases/"))throw new IOException("镜像只支持本项目更新文件");
         String name=target.getPath().substring(target.getPath().lastIndexOf('/')+1);
-        if(!name.equals("update-"+BuildConfig.APPLICATION_ID+".json")&&!name.matches("LibreTV-[0-9]+\\.[0-9]+\\.[0-9]+\\.apk"))throw new IOException("镜像更新文件名无效");
-        return URI.create(GITEE_MIRROR+name);
+        if(name.equals("update-"+BuildConfig.APPLICATION_ID+".json"))
+            return URI.create("https://gitee.com/api/v5/repos/xdmdpz/libretv-standalone/contents/"+name+"?ref=updates");
+        if(!name.matches("LibreTV-[0-9]+\\.[0-9]+\\.[0-9]+\\.apk"))throw new IOException("镜像更新文件名无效");
+        String version=name.substring("LibreTV-".length(),name.length()-".apk".length());
+        return URI.create(GITEE_MIRROR+"releases/download/v"+version+"/"+name);
     }
     private static HttpURLConnection githubConnection(URI target,URI proxy) throws Exception {
         boolean gitee=proxy!=null&&GITEE_MIRROR.equals(proxy.toString());
@@ -103,7 +106,7 @@ final class AppUpdater {
             interrupted();String host=uri.getHost();
             if (!"https".equals(uri.getScheme()) || uri.getRawUserInfo()!=null || uri.getPort()!=-1
                     || !("github.com".equals(host) || "release-assets.githubusercontent.com".equals(host) || "objects.githubusercontent.com".equals(host)
-                         || (proxy!=null&&proxy.getHost().equals(host)) || (gitee&&"raw.giteeusercontent.com".equals(host))))
+                         || (proxy!=null&&proxy.getHost().equals(host)) || (gitee&&"foruda.gitee.com".equals(host))))
                 throw new IOException("更新服务重定向地址无效");
             HttpURLConnection conn=(HttpURLConnection)uri.toURL().openConnection();
             conn.setInstanceFollowRedirects(false);conn.setConnectTimeout(5000);conn.setReadTimeout(10000);
@@ -138,7 +141,14 @@ final class AppUpdater {
                 requireOk(conn);
                 try(InputStream in=conn.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()) {
                     copy(in,out,65536);
-                    Release release=new Release(new JSONObject(new String(out.toByteArray(),StandardCharsets.UTF_8)));
+                    JSONObject metadata=new JSONObject(new String(out.toByteArray(),StandardCharsets.UTF_8));
+                    if(GITEE_MIRROR.equals(route)) {
+                        if(!"base64".equals(metadata.optString("encoding")))throw new IOException("Gitee 更新清单格式无效");
+                        byte[] decoded=android.util.Base64.decode(metadata.getString("content"),android.util.Base64.DEFAULT);
+                        if(decoded.length>65536)throw new IOException("更新信息过大");
+                        metadata=new JSONObject(new String(decoded,StandardCharsets.UTF_8));
+                    }
+                    Release release=new Release(metadata);
                     if(nas==null&&release.downloadUrl.isEmpty())throw new IOException("Release 缺少安装包地址");
                     preferredProxy=route;return release;
                 }

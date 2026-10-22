@@ -50,7 +50,8 @@ public final class GithubUpdateTest extends TestCase {
         catch(java.io.IOException expectedFailure){assertFalse(apk.exists());}
         updater.download(getInstrumentation().getTargetContext(),release,percent->{});
         android.content.Context context=getInstrumentation().getTargetContext();
-        context.getSharedPreferences("UpdateActivity",0).edit().putInt("pendingCode",release.code)
+        context.getSharedPreferences(UpdateActivity.class.getName().startsWith(context.getPackageName()+".")
+            ?UpdateActivity.class.getName().substring(context.getPackageName().length()+1):UpdateActivity.class.getName(),0).edit().putInt("pendingCode",release.code)
             .putString("pendingSha",release.sha256).putLong("pendingSize",release.size).putBoolean("awaitingPermission",false).commit();
         for(int i=0;i<2;i++) {
             android.app.Activity activity=getInstrumentation().startActivitySync(new android.content.Intent(context,UpdateActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
