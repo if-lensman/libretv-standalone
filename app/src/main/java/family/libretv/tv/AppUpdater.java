@@ -17,6 +17,14 @@ import java.util.*;
 final class AppUpdater {
     static final String REPOSITORY = "https://github.com/if-lensman/libretv-standalone";
     static final long MAX_APK = 100L * 1024 * 1024;
+    static final String GITEE_MIRROR = "https://gitee.com/xdmdpz/libretv-standalone/raw/updates/";
+    static final String DEFAULT_PROXY = "https://ghfast.top/";
+    static final String SECOND_PROXY = "https://gh-proxy.org/";
+    interface Connector { HttpURLConnection open(URI target, URI proxy) throws Exception; }
+    private final String mode, customProxy;
+    private final Connector connector;
+    private String preferredProxy;
+    java.util.function.Consumer<String> routeStatus = text -> {};
     final NasClient nas;
     final URI origin;
     static final class Release {
@@ -34,9 +42,16 @@ final class AppUpdater {
                 throw new IOException("更新信息不适用于本设备");
         }
     }
-    AppUpdater() { nas = null; origin = URI.create(REPOSITORY + "/releases/latest/download/"); }
+    AppUpdater() { this("auto", "", AppUpdater::githubConnection); }
+    AppUpdater(String mode,String proxy){this(mode,proxy,AppUpdater::githubConnection);}
+    AppUpdater(Context context) { this(context.getSharedPreferences("github-updates",0).getString("mode","auto"),
+        context.getSharedPreferences("github-updates",0).getString("proxy",""),AppUpdater::githubConnection); }
+    AppUpdater(String mode, String proxy, Connector connector) {
+        nas=null;origin=URI.create(REPOSITORY+"/releases/latest/download/");
+        this.mode=mode;this.customProxy=proxy;this.connector=connector;
+    }
     AppUpdater(NasClient nas) throws Exception {
-        this.nas = nas;
+        this.nas = nas; mode="direct";customProxy="";connector=AppUpdater::githubConnection;
         origin = new URI(nas.origin.getScheme(), null, nas.origin.getHost(), 8898, "/", null, null);
     }
     static URI validateGithubAsset(String url) throws IOException {
@@ -49,16 +64,53 @@ final class AppUpdater {
             throw new IOException("更新下载地址不属于本项目 Release");
         return uri;
     }
-    private static HttpURLConnection githubConnection(URI uri) throws Exception {
+    static URI validateProxy(String value) throws IOException {
+        URI uri;
+        try { uri=URI.create(value.trim()); } catch(IllegalArgumentException e){throw new IOException("加速地址无效",e);}
+        if(!"https".equals(uri.getScheme())||uri.getHost()==null||uri.getRawUserInfo()!=null
+                ||uri.getPort()!=-1||uri.getQuery()!=null||uri.getFragment()!=null)
+            throw new IOException("请填写 HTTPS 加速前缀，例如 https://你的域名/");
+        return URI.create(uri.toString().endsWith("/")?uri.toString():uri.toString()+"/");
+    }
+    private List<String> routes() throws IOException {
+        List<String> result=new ArrayList<>();
+        if(!"proxy".equals(mode)&&!"gitee".equals(mode))result.add("");
+        if("auto".equals(mode)||"gitee".equals(mode))result.add(GITEE_MIRROR);
+        if(!"direct".equals(mode)&&!"gitee".equals(mode)) {
+            if(customProxy.isEmpty()){result.add(DEFAULT_PROXY);result.add(SECOND_PROXY);}
+            else result.add(validateProxy(customProxy).toString());
+        }
+        if(preferredProxy!=null&&result.remove(preferredProxy))result.add(0,preferredProxy);
+        return result;
+    }
+    private static void interrupted() throws InterruptedIOException {
+        if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("更新已取消");
+    }
+    private HttpURLConnection connect(URI target,String proxy)throws Exception {
+        interrupted();routeStatus.accept(proxy.isEmpty()?"GitHub 直连":GITEE_MIRROR.equals(proxy)?"Gitee 镜像":"加速通道 · "+URI.create(proxy).getHost());
+        return connector.open(target,proxy.isEmpty()?null:validateProxy(proxy));
+    }
+    static URI mirrorTarget(URI target)throws IOException {
+        if(!"github.com".equals(target.getHost())||!target.getPath().startsWith("/if-lensman/libretv-standalone/releases/"))throw new IOException("镜像只支持本项目更新文件");
+        String name=target.getPath().substring(target.getPath().lastIndexOf('/')+1);
+        if(!name.equals("update-"+BuildConfig.APPLICATION_ID+".json")&&!name.matches("LibreTV-[0-9]+\\.[0-9]+\\.[0-9]+\\.apk"))throw new IOException("镜像更新文件名无效");
+        return URI.create(GITEE_MIRROR+name);
+    }
+    private static HttpURLConnection githubConnection(URI target,URI proxy) throws Exception {
+        boolean gitee=proxy!=null&&GITEE_MIRROR.equals(proxy.toString());
+        URI uri=proxy==null?target:gitee?mirrorTarget(target):URI.create(proxy.toString()+target.toString());
         for (int i=0;i<6;i++) {
-            String host=uri.getHost();
+            interrupted();String host=uri.getHost();
             if (!"https".equals(uri.getScheme()) || uri.getRawUserInfo()!=null || uri.getPort()!=-1
-                    || !("github.com".equals(host) || "release-assets.githubusercontent.com".equals(host) || "objects.githubusercontent.com".equals(host)))
+                    || !("github.com".equals(host) || "release-assets.githubusercontent.com".equals(host) || "objects.githubusercontent.com".equals(host)
+                         || (proxy!=null&&proxy.getHost().equals(host)) || (gitee&&"raw.giteeusercontent.com".equals(host))))
                 throw new IOException("更新服务重定向地址无效");
             HttpURLConnection conn=(HttpURLConnection)uri.toURL().openConnection();
-            conn.setInstanceFollowRedirects(false);conn.setConnectTimeout(8000);conn.setReadTimeout(20000);
+            conn.setInstanceFollowRedirects(false);conn.setConnectTimeout(5000);conn.setReadTimeout(10000);
             conn.setRequestProperty("User-Agent","LibreTV-Standalone/"+BuildConfig.VERSION_NAME);
-            int status=conn.getResponseCode();
+            conn.setRequestProperty("Cache-Control","no-cache");
+            int status;
+            try {status=conn.getResponseCode();}catch(Exception e){conn.disconnect();throw e;}
             if(status==301 || status==302 || status==303 || status==307 || status==308) {
                 String next=conn.getHeaderField("Location");conn.disconnect();
                 if(next==null)throw new IOException("更新服务重定向缺少地址");
@@ -69,7 +121,7 @@ final class AppUpdater {
         throw new IOException("更新服务重定向过多");
     }
     private HttpURLConnection open(String path) throws Exception {
-        if (nas == null) return githubConnection(origin.resolve(path));
+        if (nas == null) return connect(origin.resolve(path),"");
         if (BuildConfig.APPLICATION_ID.equals("family.libretv.standalone"))
             throw new IOException("独立研究版已禁用家庭 NAS 更新通道");
         HttpURLConnection conn = (HttpURLConnection) origin.resolve(path).toURL().openConnection();
@@ -78,16 +130,21 @@ final class AppUpdater {
         return conn;
     }
     Release check() throws Exception {
-        HttpURLConnection conn = open(nas == null ? "update-"+BuildConfig.APPLICATION_ID+".json" : "/latest.json");
-        try {
-            requireOk(conn);
-            try (InputStream in = conn.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-                copy(in, out, 65536);
-                Release release = new Release(new JSONObject(new String(out.toByteArray(), StandardCharsets.UTF_8)));
-                if (nas == null && release.downloadUrl.isEmpty()) throw new IOException("Release 缺少安装包地址");
-                return release;
-            }
-        } finally { conn.disconnect(); }
+        Exception last=null;
+        for(String route:nas==null?routes():Collections.singletonList("")) {
+            HttpURLConnection conn=null;
+            try {
+                conn=nas==null?connect(origin.resolve("update-"+BuildConfig.APPLICATION_ID+".json"),route):open("/latest.json");
+                requireOk(conn);
+                try(InputStream in=conn.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()) {
+                    copy(in,out,65536);
+                    Release release=new Release(new JSONObject(new String(out.toByteArray(),StandardCharsets.UTF_8)));
+                    if(nas==null&&release.downloadUrl.isEmpty())throw new IOException("Release 缺少安装包地址");
+                    preferredProxy=route;return release;
+                }
+            }catch(Exception e){interrupted();last=e;}finally{if(conn!=null)conn.disconnect();}
+        }
+        throw new IOException("所有更新通道均不可用，请切换通道或稍后重试",last);
     }
     interface Progress { void accept(int percent); }
     File download(Context context, Release release, Progress progress) throws Exception {
@@ -95,12 +152,15 @@ final class AppUpdater {
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("无法创建更新目录");
         File partial = new File(dir, "download.part"), apk = new File(dir, "update.apk");
         if (apk.exists() && !apk.delete()) throw new IOException("无法清理旧安装包");
-        HttpURLConnection conn = nas == null ? githubConnection(validateGithubAsset(release.downloadUrl)) : open("/apk/" + release.code + ".apk");
-        boolean complete = false;
+        Exception last=null;
+        for(String route:nas==null?routes():Collections.singletonList("")) {
+        HttpURLConnection conn=null;
+        boolean complete=false;
         try {
+            conn=nas==null?connect(validateGithubAsset(release.downloadUrl),route):open("/apk/"+release.code+".apk");
             requireOk(conn);
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            long count = 0; int last = -1;
+            long count = 0; int lastPercent = -1;
             try (InputStream in = conn.getInputStream(); OutputStream out = new FileOutputStream(partial)) {
                 byte[] buffer = new byte[32768]; int n;
                 while ((n = in.read(buffer)) != -1) {
@@ -109,14 +169,17 @@ final class AppUpdater {
                     if (count > release.size) throw new IOException("安装包大小异常");
                     digest.update(buffer, 0, n); out.write(buffer, 0, n);
                     int percent = (int)(count * 100 / release.size);
-                    if (percent != last) { progress.accept(percent); last = percent; }
+                    if (percent != lastPercent) { progress.accept(percent); lastPercent = percent; }
                 }
             }
             if (count != release.size || !hex(digest.digest()).equals(release.sha256)) throw new IOException("安装包校验失败，请重新下载");
             validateApk(context, partial, release.code);
             if (!partial.renameTo(apk)) throw new IOException("无法保存安装包");
             complete = true; return apk;
-        } finally { conn.disconnect(); if (!complete) partial.delete(); }
+        } catch(Exception e){interrupted();last=e;}
+        finally {if(conn!=null)conn.disconnect();if(!complete)partial.delete();}
+        }
+        throw new IOException("所有下载通道均失败，请切换通道后重试",last);
     }
     static void validateApk(Context context, File apk, int expectedCode) throws Exception {
         PackageManager pm = context.getPackageManager();
@@ -137,7 +200,7 @@ final class AppUpdater {
     }
     private static void copy(InputStream in, OutputStream out, int max) throws IOException {
         byte[] buffer = new byte[8192]; int n, count = 0;
-        while ((n = in.read(buffer)) != -1) { count += n; if (count > max) throw new IOException("更新信息过大"); out.write(buffer, 0, n); }
+        while ((n = in.read(buffer)) != -1) { interrupted(); count += n; if (count > max) throw new IOException("更新信息过大"); out.write(buffer, 0, n); }
     }
     static String hex(byte[] bytes) {
         StringBuilder value = new StringBuilder(); for (byte b : bytes) value.append(String.format(Locale.ROOT, "%02x", b & 255)); return value.toString();

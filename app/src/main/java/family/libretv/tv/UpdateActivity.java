@@ -13,7 +13,9 @@ import java.util.concurrent.*;
 public final class UpdateActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final Handler main=new Handler(Looper.getMainLooper());
-    private final AppUpdater updater=new AppUpdater();
+    private AppUpdater updater;
+    private Button routeButton;
+    private String activeRoute="";
     private TextView status;
     private Button check, install;
     private File pending;
@@ -25,9 +27,10 @@ public final class UpdateActivity extends Activity {
         if(now-prefs.getLong("lastCheck",0)<24*60*60*1000L)return;
         prefs.edit().putLong("lastCheck",now).apply();
         java.lang.ref.WeakReference<Activity> owner=new java.lang.ref.WeakReference<>(activity);
+        AppUpdater backgroundUpdater=new AppUpdater(activity);
         Thread thread=new Thread(()->{
             try {
-                AppUpdater.Release release=new AppUpdater().check();
+                AppUpdater.Release release=backgroundUpdater.check();
                 if(release.code<=BuildConfig.VERSION_CODE)return;
                 Activity target=owner.get();if(target==null)return;
                 target.runOnUiThread(()->{
@@ -45,14 +48,43 @@ public final class UpdateActivity extends Activity {
         ScrollView scroll=new ScrollView(this);LinearLayout content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);
         int pad=Math.round(24*getResources().getDisplayMetrics().density);content.setPadding(pad,pad,pad,pad);scroll.addView(content);setContentView(scroll);
         TextView heading=new TextView(this);heading.setText("应用更新");heading.setTextSize(25);content.addView(heading);
-        TextView hint=new TextView(this);hint.setText("当前版本 "+BuildConfig.VERSION_NAME+"\n从 GitHub Releases 获取更新；安装后保留本机来源、收藏和播放进度。");content.addView(hint);
+        TextView hint=new TextView(this);hint.setText("当前版本 "+BuildConfig.VERSION_NAME+"\n从 GitHub Releases 获取更新，连接失败自动尝试 Gitee 镜像和备用加速通道；覆盖安装保留本机来源、收藏和播放进度。");content.addView(hint);
         status=new TextView(this);content.addView(status);
+        routeButton=button(content,"",this::chooseRoute);updateRouteLabel();configureUpdater();
         check=button(content,"检查更新",this::checkUpdate);
         install=button(content,"安装已下载更新",this::installPending);install.setVisibility(android.view.View.GONE);
         button(content,"返回",this::finish);check.requestFocus();
         if(restorePending()) {
             if(getPreferences(0).getBoolean("awaitingPermission",false) && (Build.VERSION.SDK_INT<26 || getPackageManager().canRequestPackageInstalls()))installPending();
         } else checkUpdate();
+    }
+    private android.content.SharedPreferences routePrefs(){return getSharedPreferences("github-updates",0);}
+    private void configureUpdater(){
+        updater=new AppUpdater(this);
+        updater.routeStatus=text->main.post(()->{if(!dead){activeRoute=text;status.setText("正在连接 · "+text);}});
+    }
+    private void updateRouteLabel(){
+        String mode=routePrefs().getString("mode","auto");
+        routeButton.setText("更新通道："+("direct".equals(mode)?"GitHub 直连":"proxy".equals(mode)?"加速":"gitee".equals(mode)?"Gitee 镜像":"自动切换"));
+    }
+    private void chooseRoute(){
+        new AlertDialog.Builder(this).setTitle("更新通道").setItems(new String[]{"自动：直连 → Gitee → 加速","仅 GitHub 直连","仅 Gitee 镜像","仅加速通道","自定义加速地址"},(d,which)->{
+            if(which==4){editProxy();return;}
+            routePrefs().edit().putString("mode",new String[]{"auto","direct","gitee","proxy"}[which]).apply();
+            updateRouteLabel();configureUpdater();status.setText("通道已切换，请检查更新");
+        }).setNegativeButton("取消",null).show();
+    }
+    private void editProxy(){
+        EditText input=new EditText(this);input.setSingleLine(true);input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        input.setHint("留空使用内置通道");input.setText(routePrefs().getString("proxy",""));
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("自定义 HTTPS 加速前缀").setMessage("只用于公开更新文件。填写前缀，不需要拼接 GitHub 链接；留空恢复内置通道。").setView(input)
+            .setNegativeButton("取消",null).setPositiveButton("保存",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            String value=input.getText().toString().trim();
+            try{if(!value.isEmpty())value=AppUpdater.validateProxy(value).toString();}
+            catch(Exception e){input.setError(e.getMessage());return;}
+            routePrefs().edit().putString("proxy",value).apply();configureUpdater();status.setText("加速地址已保存");dialog.dismiss();
+        }));dialog.show();
     }
     private Button button(LinearLayout parent,String title,Runnable action) {
         Button b=new Button(this);b.setText(title);b.setAllCaps(false);b.setFocusableInTouchMode(true);b.setBackgroundResource(R.drawable.focus_button);b.setTextColor(android.graphics.Color.WHITE);
@@ -61,11 +93,11 @@ public final class UpdateActivity extends Activity {
     private interface Work<T>{T run()throws Exception;}
     private interface Done<T>{void accept(T value)throws Exception;}
     private <T> void work(String hint,Work<T> task,Done<T> done) {
-        busy=true;check.setEnabled(false);status.setText(hint);
+        busy=true;check.setEnabled(false);routeButton.setEnabled(false);status.setText(hint);
         worker.submit(()->{try{T result=task.run();main.post(()->{
-            if(dead)return;busy=false;check.setEnabled(true);
+            if(dead)return;busy=false;check.setEnabled(true);routeButton.setEnabled(true);
             try{done.accept(result);}catch(Exception e){status.setText(e.getMessage());}
-        });}catch(Exception e){main.post(()->{if(!dead){busy=false;check.setEnabled(true);status.setText("更新失败："+e.getMessage()+"\n请检查网络后重试。");}});}});
+        });}catch(Exception e){main.post(()->{if(!dead){busy=false;check.setEnabled(true);routeButton.setEnabled(true);status.setText("更新失败："+e.getMessage()+"\n请检查网络后重试。");}});}});
     }
     private void checkUpdate() {
         work("正在检查 GitHub Release…",updater::check,release->{
@@ -76,7 +108,7 @@ public final class UpdateActivity extends Activity {
         });
     }
     private void download(AppUpdater.Release release) {
-        work("正在下载更新…",()->updater.download(this,release,percent->main.post(()->{if(!dead)status.setText("正在下载 · "+percent+"%");})),file->{
+        work("正在下载更新…",()->updater.download(this,release,percent->main.post(()->{if(!dead)status.setText("正在下载 · "+percent+"%\n"+activeRoute);})),file->{
             getPreferences(0).edit().putInt("pendingCode",release.code).putString("pendingSha",release.sha256).putLong("pendingSize",release.size).commit();
             pending=file;install.setVisibility(android.view.View.VISIBLE);status.setText("下载完成，签名和完整性校验通过");installPending();
         });

@@ -26,11 +26,18 @@ public final class GithubUpdateTest extends TestCase {
         try{new AppUpdater.Release(metadata().put("sha256","invalid"));fail();}catch(java.io.IOException expected){}
         try{new AppUpdater.Release(metadata().put("size",AppUpdater.MAX_APK+1));fail();}catch(java.io.IOException expected){}
     }
+    /** Explicit opt-in network probe on the emulator, with Android TLS and redirect validation. */
+    public void testLiveProxyManifestWhenRequested()throws Exception {
+        String proxy=androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("probeProxy");
+        if(proxy==null)return;
+        AppUpdater updater=new AppUpdater("proxy",proxy);AppUpdater.Release release=updater.check();
+        assertTrue(release.code>=42);assertFalse(release.downloadUrl.isEmpty());
+    }
     /** Explicit opt-in: run on a lower-code build to validate actual GitHub bytes and installed signing identity. */
     public void testLiveReleaseDownloadWhenRequested() throws Exception {
         android.os.Bundle args=androidx.test.platform.app.InstrumentationRegistry.getArguments();
         String expected=args.getString("expectedUpdateCode");if(expected==null)return;
-        AppUpdater updater=new AppUpdater();AppUpdater.Release release=updater.check();
+        AppUpdater updater=new AppUpdater(args.getString("updateMode","auto"),args.getString("updateProxy",""));AppUpdater.Release release=updater.check();
         assertEquals(Integer.parseInt(expected),release.code);
         assertTrue(release.code>BuildConfig.VERSION_CODE);
         File apk=updater.download(getInstrumentation().getTargetContext(),release,percent->{});
@@ -49,6 +56,12 @@ public final class GithubUpdateTest extends TestCase {
             android.app.Activity activity=getInstrumentation().startActivitySync(new android.content.Intent(context,UpdateActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
             java.lang.reflect.Field field=UpdateActivity.class.getDeclaredField("pending");field.setAccessible(true);
             assertNotNull("Downloaded APK lost across Activity restart",field.get(activity));
+            if(i==0){
+                java.lang.reflect.Field route=UpdateActivity.class.getDeclaredField("routeButton");route.setAccessible(true);
+                assertNotNull("Update route selector missing",route.get(activity));
+                android.graphics.Bitmap image=getInstrumentation().getUiAutomation().takeScreenshot();
+                try(java.io.FileOutputStream out=new java.io.FileOutputStream(new File(context.getFilesDir(),"update-route-page.png"))){image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}image.recycle();
+            }
             getInstrumentation().runOnMainSync(activity::finish);getInstrumentation().waitForIdleSync();
         }
     }
