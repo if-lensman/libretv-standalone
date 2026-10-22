@@ -542,7 +542,7 @@ class PhoneActivity : Activity() {
             val discovered = castCommands.withLock { DLNACast.search(8000) }
             knownDevices = knownDevices + discovered.map { it.id }
             val devices = ReceiverDiscovery.receivers(discovered)
-            if(devices.isEmpty()) { notice.text = "没有找到接收设备。请检查电视果已开机、手机 Wi-Fi 和路由器的设备隔离设置。"; return@work }
+            if(devices.isEmpty()) { notice.text = "没有找到接收设备。请检查投屏设备已开机、手机与设备位于同一 Wi-Fi，以及路由器的设备隔离设置。"; return@work }
             notice.text = "找到 ${devices.size} 个接收设备"
             dialog = AlertDialog.Builder(this@PhoneActivity).setTitle("选择投屏设备")
                 .setItems(devices.map { "${it.name} · ${it.address}" }.toTypedArray()) { _,index ->
@@ -628,7 +628,7 @@ class PhoneActivity : Activity() {
             val pending = record.optInt("pending", -1)
             when(record.optString("phase")) {
                 "done" -> "上次发送完成，已确认发送 $count 集"
-                "unconfirmed", "sending" -> "已确认发送 $count 集；第 ${pending+1} 集未能确认，请先检查电视果列表再重试"
+                "unconfirmed", "sending" -> "已确认发送 $count 集；第 ${pending+1} 集未能确认，请先检查投屏设备的播放列表再重试"
                 else -> "上次添加已停止，已确认发送 $count 集"
             }
         } catch(e: Exception) { "" }
@@ -645,7 +645,7 @@ class PhoneActivity : Activity() {
         val ticket = generation
         val info = section()
         hero(info, snapshot.title, snapshot.poster, "${target.name}\n共 ${snapshot.urls.size} 集")
-        info.addView(text("按现有单集投屏方式逐集发送。电视果会保留自己的列表，播放和排序可在电视果 App 中控制。", 14f).apply { setTextColor(secondaryColor) })
+        info.addView(text("此功能仅适用于支持自定义 DLNA 播放列表的投屏设备，按单集投屏方式逐集发送。列表是否保留、播放及排序方式由设备决定；不支持的设备请使用单集投屏，无需使用此功能。", 14f).apply { setTextColor(secondaryColor) })
         val summary = batchSummary(snapshot)
         if(summary.isNotEmpty()) info.addView(text(summary, 14f).apply { setTextColor(accentColor) })
         val rangeBox = section("选择添加范围")
@@ -710,9 +710,9 @@ class PhoneActivity : Activity() {
                     writeBatch(snapshot, phase, range.first, range.last, result.accepted.size, result.unconfirmed ?: -1)
                     if(ticket == generation) {
                         status.text = when {
-                            result.unconfirmed != null -> "已确认发送 ${result.accepted.size} 集；第 ${result.unconfirmed+1} 集未能确认，已停止。请先检查电视果列表，避免重复添加。"
-                            result.stopped -> "已停止添加，已确认发送 ${result.accepted.size} 集；不会停止电视果已有的播放。"
-                            else -> "发送完成，已确认发送 ${result.accepted.size} 集。请在电视果 App 中查看列表。"
+                            result.unconfirmed != null -> "已确认发送 ${result.accepted.size} 集；第 ${result.unconfirmed+1} 集未能确认，已停止。请先检查投屏设备的播放列表，避免重复添加。"
+                            result.stopped -> "已停止添加，已确认发送 ${result.accepted.size} 集；不会停止投屏设备当前的播放。"
+                            else -> "发送完成，已确认发送 ${result.accepted.size} 集。若设备支持自定义 DLNA 播放列表，可在设备或其配套 App 中查看；发送成功不代表已加入列表。"
                         }
                         notice.text = if(phase == "done") "批量发送完成" else "批量添加已停止"
                     }
@@ -737,7 +737,7 @@ class PhoneActivity : Activity() {
         start.setOnValueChangedListener { _,_,_ -> rangeTouched = true; updateRange() }
         end.setOnValueChangedListener { _,_,_ -> rangeTouched = true; updateRange() }
         updateRange()
-        if(requiresRangeChange) status.text = "上次已发送完成；如需再次添加，请先调整范围，并核对电视果列表以免重复。"
+        if(requiresRangeChange) status.text = "上次已发送完成；如需再次添加，请先调整范围，并核对投屏设备的播放列表以免重复。"
         button("返回投屏控制") { controls() }
         content.addView(text("此操作与逐次点下一集相同，接收器可能切换当前画面。已发送的项目不会由手机撤回，也不会自动重发。", 13f).apply { setTextColor(secondaryColor) })
     }
@@ -789,7 +789,7 @@ class PhoneActivity : Activity() {
             }
         }.isEnabled = attached
         button("返回选片（保留投屏）") { home() }
-        content.addView(text("切到其他 App 或锁屏不会停止当前视频。手机显示最近发送的集数；电视果自己的播放列表可在电视果 App 中控制。", 13f).apply { setTextColor(secondaryColor) })
+        content.addView(text("切到其他 App 或锁屏不会停止当前视频。手机显示最近发送的集数；若投屏设备支持自定义 DLNA 播放列表，可通过设备或配套 App 管理，不支持时使用单集投屏即可。", 13f).apply { setTextColor(secondaryColor) })
         if(attached) startPolling() else {
             work("正在重新连接上次的投屏…") {
                 val target = castDevice ?: return@work

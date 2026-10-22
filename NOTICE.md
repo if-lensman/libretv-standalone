@@ -8,4 +8,4 @@ JUnit/AndroidX Test Runner 只用于测试。FFmpeg 由本机测试脚本外部�
 
 二维码生成与识别使用既有 ZXing Core 3.3.3（Apache-2.0）。0.10.0 的手机扫码使用系统 Camera API 和本地图片解码，不新增第三方相机/扫码 SDK；只有进入扫码页才申请相机权限。原项目及许可：https://github.com/zxing/zxing 。
 
-手机投屏使用 UPnPCast v1.3.0（MIT），项目 https://github.com/yinnho/UPnPCast ，Copyright (c) Yinnho，原许可见该仓库 LICENSE。并引入 Kotlin Android 插件 1.9.24、kotlinx.coroutines 1.8.1（Apache-2.0）及 NanoHTTPD 2.3.1（BSD-3-Clause）；0.7.3 起使用 third-party/upnpcast/ 内固定原提交的源码模块，修复电视果严格 XML 格式兼容。MIT 原许可随源码与 APK 保留。构建不再引入上游示例的 Material/AppCompat 依赖。各依赖锁见 app/gradle.lockfile 与 third-party/upnpcast/gradle.lockfile。
+手机投屏使用 UPnPCast v1.3.0（MIT），项目 https://github.com/yinnho/UPnPCast ，Copyright (c) Yinnho，原许可见该仓库 LICENSE。并引入 Kotlin Android 插件 1.9.24、kotlinx.coroutines 1.8.1（Apache-2.0）及 NanoHTTPD 2.3.1（BSD-3-Clause）；0.7.3 起使用 third-party/upnpcast/ 内固定原提交的源码模块，修复部分投屏设备对严格 XML 格式的兼容。MIT 原许可随源码与 APK 保留。构建不再引入上游示例的 Material/AppCompat 依赖。各依赖锁见 app/gradle.lockfile 与 third-party/upnpcast/gradle.lockfile。
