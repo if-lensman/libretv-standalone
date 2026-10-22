@@ -102,8 +102,23 @@ public final class MainActivity extends Activity {
                 && !getIntent().hasCategory(android.content.Intent.CATEGORY_LEANBACK_LAUNCHER)) {
             startActivity(new android.content.Intent(this, PhoneActivity.class)); finish(); return;
         }
+        if(!getIntent().hasExtra("tvDestination")){
+            startActivity(new android.content.Intent(this,TvHomeActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP|android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP));finish();return;
+        }
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        try { client=new NasClient(this); sources=client.local.sources(); loadSourceSelection(); showSearch(); }
+        try {
+            client=new NasClient(this);sources=client.local.sources();loadSourceSelection();showSearch();
+            String destination=getIntent().getStringExtra("tvDestination");
+            if("favorites".equals(destination))showFavorites();
+            else if("playlist".equals(destination))showPlaylist();
+            else if("settings".equals(destination))showSettings();
+            else if("resume".equals(destination)){
+                JSONObject entry=new JSONObject(getIntent().getStringExtra("resumeEntry"));
+                loadDetail(new JSONObject(entry.getJSONObject("item").toString()).put("favoriteSource",entry.getJSONObject("source")),0,true);
+            }else if(getIntent().hasExtra("query")){
+                EditText keyword=new EditText(this);keyword.setText(getIntent().getStringExtra("query"));performSearch(keyword);
+            }
+        }
         catch(Exception e) { showConfig(); setNotice(e.getMessage()); }
         UpdateActivity.checkInBackground(this);
     }
@@ -203,7 +218,7 @@ public final class MainActivity extends Activity {
             sources=client.local.sources();loadSourceSelection();showSearch();setNotice("已新增 "+count+" 个来源");
         }));
         button(content,"手机扫码填写配置",this::showSourcePairing);
-        button(content,"返回选片",this::showSearch);
+        button(content,"返回选片",this::homeOrSearch);
     }
     private void showSourcePairing() {
         page(Screen.PAIRING,"扫码添加来源");
@@ -399,7 +414,10 @@ public final class MainActivity extends Activity {
     }
     private void showSettings() {
         page(Screen.SETTINGS,"LibreTV · 来源设置");
-        button(content,"返回选片",this::showSearch);
+        button(content,"返回选片",this::homeOrSearch);
+        RecommendationRepository recommendations=new RecommendationRepository(this);
+        CheckBox showRecommendations=new CheckBox(this);showRecommendations.setText("显示首页推荐");showRecommendations.setTextColor(Color.WHITE);showRecommendations.setChecked(recommendations.enabled());content.addView(showRecommendations);
+        showRecommendations.setOnCheckedChangeListener((v,checked)->recommendations.setEnabled(checked));
         button(content,"添加来源 / 扫码导入",this::showConfig);
         button(content,"检查更新",()->startActivity(new android.content.Intent(this,UpdateActivity.class)));
         content.addView(label("共 "+sources.length()+" 个来源，收藏只保存在本机。",17));
@@ -654,7 +672,7 @@ public final class MainActivity extends Activity {
         task("正在读取本机收藏夹",()->active.request("/api/favorites",null),response->{
             page(Screen.FAVORITES,"LibreTV   /   本机收藏夹");
             content.addView(label("收藏仅保存在本机，无需 NAS、账号或服务器。",17));
-            button(content,"‹ 返回首页",this::showSearch);
+            button(content,"‹ 返回首页",this::homeOrSearch);
             button(content,"刷新收藏夹",this::showFavorites);
             JSONArray list=response.optJSONArray("items");
             if(list==null || list.length()==0)content.addView(label("还没有收藏。进入影片详情，点击收藏即可。",19));
@@ -671,12 +689,17 @@ public final class MainActivity extends Activity {
             }
         });
     }
+    private void homeOrSearch(){
+        String destination=getIntent().getStringExtra("tvDestination");
+        if(destination!=null&&!destination.equals("search"))finish();else showSearch();
+    }
     private void returnFromDetail() {
+        if("resume".equals(getIntent().getStringExtra("tvDestination"))){finish();return;}
         if(detailReturn==Screen.PLAYLIST)showPlaylist();else if(detailReturn==Screen.FAVORITES)showFavorites();else showSearch();
     }
     private void showPlaylist() {
         page(Screen.PLAYLIST,"LibreTV   /   播放列表");
-        Button back=button(content,"‹ 返回首页",this::showSearch);
+        Button back=button(content,"‹ 返回首页",this::homeOrSearch);
         content.addView(label("本机保存 · 自动记录已播放影片，也可在详情手动加入 · 移除后保留观看历史",17));
         PlaybackStore store=new PlaybackStore(this);JSONArray list=store.playlist();Button first=null;
         try {
@@ -898,6 +921,8 @@ public final class MainActivity extends Activity {
     }
     @SuppressWarnings("deprecation") @Override public void onBackPressed() {
         if (busy) { generation++; busy = false; setNotice("已取消等待，可重试"); return; }
+        String destination=getIntent().getStringExtra("tvDestination");
+        if((screen==Screen.FAVORITES&&"favorites".equals(destination))||(screen==Screen.PLAYLIST&&"playlist".equals(destination))||(screen==Screen.SETTINGS&&"settings".equals(destination))){finish();return;}
         switch (screen) {
             case PLAYER: if (controlsVisible) hideControls(); else leavePlayer(); break;
             case DETAIL: returnFromDetail(); break;

@@ -22,7 +22,7 @@ public final class StandaloneTvFlowTest extends TestCase {
     private final String root="http://10.0.2.2:19001";
     @Override protected void setUp()throws Exception {
         instrument=InstrumentationRegistry.getInstrumentation();context=instrument.getTargetContext();
-        for(String name:new String[]{"standalone-library","standalone-playback","MainActivity"}) {
+        for(String name:new String[]{"standalone-library","standalone-playback","MainActivity","recommendations"}) {
             SharedPreferences prefs=context.getSharedPreferences(name,0);backups.put(name,new HashMap<>(prefs.getAll()));prefs.edit().clear().commit();
         }
         repo=new LocalRepository(context);
@@ -42,7 +42,7 @@ public final class StandaloneTvFlowTest extends TestCase {
     private JSONObject source(String path)throws Exception {return new JSONObject().put("key",LocalRepository.key(root+path)).put("name","TV source "+path).put("url",root+path).put("enabled",true);}
     private JSONObject item()throws Exception {return new JSONObject().put("vodId","1").put("name","Fixture title").put("sourceKey",source("/cms").getString("key")).put("sourceName","TV source /cms");}
     private void launch()throws Exception {
-        activity=(MainActivity)instrument.startActivitySync(new Intent(context,MainActivity.class).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));await("搜索");
+        activity=(MainActivity)instrument.startActivitySync(new Intent(context,MainActivity.class).putExtra("tvDestination","search").addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));await("搜索");
         long end=System.currentTimeMillis()+8000;boolean[] ready={false};
         while(!ready[0] && System.currentTimeMillis()<end) {
             instrument.runOnMainSync(()->{
