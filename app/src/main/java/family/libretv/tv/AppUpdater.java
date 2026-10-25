@@ -24,7 +24,8 @@ final class AppUpdater {
     private final String mode, customProxy;
     private final Connector connector;
     private String preferredProxy;
-    java.util.function.Consumer<String> routeStatus = text -> {};
+    interface RouteStatus { void accept(String text); }
+    RouteStatus routeStatus = text -> {};
     final NasClient nas;
     final URI origin;
     static final class Release {

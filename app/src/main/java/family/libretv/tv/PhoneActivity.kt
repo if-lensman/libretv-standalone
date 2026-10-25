@@ -307,9 +307,7 @@ class PhoneActivity : Activity() {
         if(requestCode==414 && resultCode==RESULT_OK && data?.data!=null) {
             val uri=data.data!!
             work("正在导入频道…") { val count=withContext(Dispatchers.IO) {
-                val display=contentResolver.query(uri,arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),null,null,null)?.use { c-> if(c.moveToFirst()) c.getString(0) else "本地频道" } ?: "本地频道"
-                val input=contentResolver.openInputStream(uri) ?: throw java.io.IOException("无法读取文件")
-                liveRepository.importPlaylist(display,LocalRepository.read(input,M3uPlaylist.MAX_BYTES));liveRepository.channels().length()
+                LivePlaylistFile.importInto(this@PhoneActivity,liveRepository,uri);liveRepository.channels().length()
             };liveScreen(false);notice.text="已导入频道，当前共 $count 个" }
         }
         if(requestCode==412 && resultCode==RESULT_OK) {

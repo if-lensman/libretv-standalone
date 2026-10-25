@@ -98,7 +98,7 @@ public final class TvHomeActivity extends Activity {
             if(dead||ticket!=generation||!started)return;if(fresh.toString().equals(shown.toString()))return;
             // A recommendation refresh must not move a remote target while someone is browsing it.
             if(focusKey.startsWith("film-")&&shown.length()>0)return;
-            String previous=focusKey;items=fresh;targets.keySet().removeIf(key->key.startsWith("film-"));recommendationCards.removeAllViews();renderCards(page.equals("more"));if(page.equals("home"))wireHomeFocus();View target=targets.get(previous);if(previous.startsWith("film-")&&target!=null)target.requestFocusFromTouch();
+            String previous=focusKey;items=fresh;for(java.util.Iterator<String> keys=targets.keySet().iterator();keys.hasNext();)if(keys.next().startsWith("film-"))keys.remove();recommendationCards.removeAllViews();renderCards(page.equals("more"));if(page.equals("home"))wireHomeFocus();View target=targets.get(previous);if(previous.startsWith("film-")&&target!=null)target.requestFocusFromTouch();
         });}catch(Exception e){main.post(()->{if(!dead&&ticket==generation){recommendationStatus.setVisibility(View.VISIBLE);recommendationStatus.setText(shown.length()>0?"暂时无法更新，显示上次片单":"片单暂时无法加载，仍可使用搜索和直播。");}});}});
     }
     private void link(String from,String to,int direction){View a=targets.get(from),b=targets.get(to);if(a==null||b==null)return;switch(direction){case View.FOCUS_UP:a.setNextFocusUpId(b.getId());break;case View.FOCUS_DOWN:a.setNextFocusDownId(b.getId());break;case View.FOCUS_LEFT:a.setNextFocusLeftId(b.getId());break;case View.FOCUS_RIGHT:a.setNextFocusRightId(b.getId());break;default:break;}}

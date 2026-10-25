@@ -29,9 +29,9 @@ final class M3uPlaylist {
                 while(m.find())attrs.put(m.group(1).toLowerCase(Locale.ROOT),m.group(2)!=null?m.group(2):m.group(3));
                 int comma=-1;char quote=0;
                 for(int i=0;i<line.length();i++){char c=line.charAt(i);if(c=='\''||c=='\"'){if(quote==0)quote=c;else if(quote==c)quote=0;}else if(c==','&&quote==0){comma=i;break;}}
-                name=comma>=0?line.substring(comma+1).trim():attrs.getOrDefault("tvg-name","");
-                if(name.isEmpty())name=attrs.getOrDefault("tvg-name","");
-                group=attrs.getOrDefault("group-title","未分组");ua="";ref="";pending=true;
+                name=comma>=0?line.substring(comma+1).trim():attribute(attrs,"tvg-name","");
+                if(name.isEmpty())name=attribute(attrs,"tvg-name","");
+                group=attribute(attrs,"group-title","未分组");ua="";ref="";pending=true;
             } else if(pending && line.startsWith("#EXTGRP:"))group=line.substring(8).trim();
             else if(pending && line.startsWith("#EXTVLCOPT:http-user-agent="))ua=line.substring(line.indexOf('=')+1).trim();
             else if(pending && (line.startsWith("#EXTVLCOPT:http-referrer=")||line.startsWith("#EXTVLCOPT:http-referer=")))ref=line.substring(line.indexOf('=')+1).trim();
@@ -41,14 +41,15 @@ final class M3uPlaylist {
                 if(!http(line))continue;
                 if(!ua.isEmpty()&&(ua.contains("\r")||ua.contains("\n")))continue;
                 if(!ref.isEmpty()&&!http(ref))continue;
-                String logo=attrs.getOrDefault("tvg-logo","");if(!http(logo))logo="";
-                channels.add(new Channel(name,group,attrs.getOrDefault("tvg-id",""),logo,line,ua,ref));
+                String logo=attribute(attrs,"tvg-logo","");if(!http(logo))logo="";
+                channels.add(new Channel(name,group,attribute(attrs,"tvg-id",""),logo,line,ua,ref));
                 if(channels.size()>MAX_CHANNELS)throw new IOException("频道超过5000条，请使用精简订阅");
             }
         }
         if(channels.isEmpty())throw new IOException("列表没有可用的 HTTP(S) 频道，已保留上次列表");
         return channels;
     }
+    private static String attribute(Map<String,String> attrs,String key,String fallback){String value=attrs.get(key);return value==null?fallback:value;}
     static boolean http(String url) {
         try{URI u=new URI(url);return ("http".equalsIgnoreCase(u.getScheme())||"https".equalsIgnoreCase(u.getScheme()))&&u.getHost()!=null&&u.getRawUserInfo()==null&&u.getFragment()==null;}
         catch(Exception e){return false;}

@@ -3,6 +3,8 @@ package family.libretv.tv;
 import android.app.*;
 import android.os.*;
 import android.content.Intent;
+import android.content.ActivityNotFoundException;
+import android.net.Uri;
 import android.graphics.Typeface;
 import android.graphics.drawable.*;
 import android.view.*;
@@ -15,6 +17,7 @@ import org.json.*;
 /** Remote-friendly channel grid; subscription and playback data remain in LiveRepository. */
 @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public final class LiveBrowseActivity extends Activity {
+    private static final int IMPORT_PLAYLIST=414;
     private LiveRepository repository;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final Handler main=new Handler(Looper.getMainLooper());
@@ -45,7 +48,7 @@ public final class LiveBrowseActivity extends Activity {
     private void render()throws Exception {
         String desired=focusKey;restoring=true;int generation=++renderGeneration;controls.clear();
         JSONArray channels=repository.channels();LinkedHashMap<String,Integer> groups=new LinkedHashMap<>();groups.put("全部",channels.length());groups.put("收藏",0);
-        for(int i=0;i<channels.length();i++){JSONObject c=channels.getJSONObject(i);String name=c.optString("group");if(name.isEmpty())name="未分组";if(!name.equals("全部")&&!name.equals("收藏"))groups.put(name,groups.getOrDefault(name,0)+1);if(repository.favorite(c.getString("id")))groups.put("收藏",groups.get("收藏")+1);}
+        for(int i=0;i<channels.length();i++){JSONObject c=channels.getJSONObject(i);String name=c.optString("group");if(name.isEmpty())name="未分组";if(!name.equals("全部")&&!name.equals("收藏"))groups.put(name,(groups.containsKey(name)?groups.get(name):0)+1);if(repository.favorite(c.getString("id")))groups.put("收藏",groups.get("收藏")+1);}
         if(!groups.containsKey(group))group="全部";
         visible.clear();for(int i=0;i<channels.length();i++){JSONObject c=channels.getJSONObject(i);String name=c.optString("group");if(name.isEmpty())name="未分组";if(group.equals("全部")||(group.equals("收藏")&&repository.favorite(c.getString("id")))||(!group.equals("收藏")&&group.equals(name)))visible.add(c);}
         LinearLayout outer=new LinearLayout(this);outer.setOrientation(LinearLayout.VERTICAL);outer.setPadding(dp(28),dp(18),dp(28),dp(12));outer.setBackgroundColor(0xff101723);
@@ -54,6 +57,7 @@ public final class LiveBrowseActivity extends Activity {
         Button back=button(header,"返回选片","back",false,this::finish);back.setLayoutParams(new LinearLayout.LayoutParams(dp(104),dp(42)));
         Button update=button(header,"刷新频道","refresh",false,()->refresh(true));update.setLayoutParams(new LinearLayout.LayoutParams(dp(104),dp(42)));((LinearLayout.LayoutParams)update.getLayoutParams()).leftMargin=dp(10);
         Button configure=button(header,"添加直播订阅","configure",false,this::configure);configure.setLayoutParams(new LinearLayout.LayoutParams(dp(132),dp(42)));((LinearLayout.LayoutParams)configure.getLayoutParams()).leftMargin=dp(10);
+        Button file=button(header,"导入 M3U","import",false,this::pickPlaylist);file.setLayoutParams(new LinearLayout.LayoutParams(dp(112),dp(42)));((LinearLayout.LayoutParams)file.getLayoutParams()).leftMargin=dp(10);
         notice=text(refreshing?"正在检查频道…":"方向键选择频道 · 确认播放 · 长按确认或菜单键收藏",13,0xff9db0c5);notice.setPadding(0,dp(3),0,dp(10));outer.addView(notice);
         LinearLayout body=new LinearLayout(this);outer.addView(body,new LinearLayout.LayoutParams(-1,0,1));
         ScrollView sidebar=new ScrollView(this);sidebar.setVerticalScrollBarEnabled(false);LinearLayout filters=new LinearLayout(this);filters.setOrientation(LinearLayout.VERTICAL);sidebar.addView(filters);body.addView(sidebar,new LinearLayout.LayoutParams(dp(154),-1));
@@ -67,7 +71,7 @@ public final class LiveBrowseActivity extends Activity {
         TextView heading=text(group+" · "+visible.size()+" 个频道",18,0xffe8eef5);heading.setPadding(dp(6),dp(6),0,dp(10));catalogue.addView(heading);
         columns=Math.max(2,Math.min(5,(getResources().getConfiguration().screenWidthDp-240)/180));
         grid=new RecyclerView(this);grid.setId(View.generateViewId());grid.setContentDescription("直播频道卡片");grid.setClipToPadding(false);grid.setClipChildren(false);grid.setPadding(dp(2),dp(6),dp(2),dp(8));layout=new GridLayoutManager(this,columns);grid.setLayoutManager(layout);grid.setItemAnimator(null);grid.setAdapter(new ChannelAdapter());catalogue.addView(grid,new LinearLayout.LayoutParams(-1,0,1));
-        if(visible.isEmpty()){TextView empty=text(group.equals("收藏")?"还没有收藏频道\n选中频道后，长按确认键即可收藏":"暂无频道\n添加直播订阅后，刷新频道即可开始观看",18,0xff9db0c5);empty.setGravity(Gravity.CENTER);catalogue.addView(empty,new LinearLayout.LayoutParams(-1,0,1));grid.setVisibility(View.GONE);}
+        if(visible.isEmpty()){TextView empty=text(group.equals("收藏")?"还没有收藏频道\n选中频道后，长按确认键即可收藏":"暂无频道\n添加直播订阅，或导入 M3U 文件",18,0xff9db0c5);empty.setGravity(Gravity.CENTER);catalogue.addView(empty,new LinearLayout.LayoutParams(-1,0,1));grid.setVisibility(View.GONE);}
         setContentView(outer);
         final String target=desired;
         grid.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener(){public void onGlobalLayout(){if(grid.getViewTreeObserver().isAlive())grid.getViewTreeObserver().removeOnGlobalLayoutListener(this);if(dead||generation!=renderGeneration)return;View control=controls.get(target);if(control!=null){restoring=false;control.requestFocus();return;}int position=0;for(int i=0;i<visible.size();i++)if(target.equals("channel:"+visible.get(i).optString("id")))position=i;restoring=false;if(!visible.isEmpty())focusChannel(position);else controls.get("group:"+group).requestFocus();}});
@@ -109,6 +113,23 @@ public final class LiveBrowseActivity extends Activity {
             h.card.setOnKeyListener((v,code,event)->{if(event.getAction()!=KeyEvent.ACTION_DOWN)return false;if(code==KeyEvent.KEYCODE_MENU){if(event.getRepeatCount()==0)actions(channel);return true;}if(code==KeyEvent.KEYCODE_DPAD_LEFT&&position%columns==0){View filter=controls.get("group:"+group);if(filter!=null)filter.requestFocus();return true;}return false;});
         }
         @Override public int getItemCount(){return visible.size();}
+    }
+    private void pickPlaylist(){
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+        try{startActivityForResult(intent,IMPORT_PLAYLIST);}
+        catch(ActivityNotFoundException missing){
+            try{startActivityForResult(new Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"),IMPORT_PLAYLIST);}
+            catch(ActivityNotFoundException alsoMissing){notice.setText("电视没有可用的文件选择器，请先安装支持选文件的文件管理器，再导入 M3U");}
+        }
+    }
+    @Override protected void onActivityResult(int request,int result,Intent data){
+        super.onActivityResult(request,result,data);
+        if(request!=IMPORT_PLAYLIST||result!=RESULT_OK||data==null||data.getData()==null)return;
+        Uri uri=data.getData();notice.setText("正在导入频道…");
+        worker.submit(()->{try{
+            LivePlaylistFile.importInto(this,repository,uri);int count=repository.channels().length();
+            main.post(()->{if(dead)return;group="全部";focusKey="import";renderSafely();notice.setText("已导入频道，当前共 "+count+" 个 · 更新时重新导入同名文件");});
+        }catch(Exception e){main.post(()->{if(!dead)notice.setText("导入失败，已有频道保留 · "+(e.getMessage()==null?"请检查文件或重新选择":e.getMessage()));});}});
     }
     private void configure(){LinearLayout fields=new LinearLayout(this);fields.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("订阅名称");fields.addView(name);EditText url=new EditText(this);url.setSingleLine(true);url.setHint("M3U订阅地址");fields.addView(url);new AlertDialog.Builder(this).setTitle("添加直播订阅").setView(fields).setNegativeButton("取消",null).setPositiveButton("添加",(d,w)->{try{repository.saveSubscription(null,name.getText().toString(),url.getText().toString());refresh(true);}catch(Exception e){notice.setText(e.getMessage());}}).show();}
     private void refresh(boolean force){if(refreshing)return;refreshing=true;if(notice!=null)notice.setText("正在检查频道…");worker.submit(()->{try{LiveRepository.Refresh result=repository.refresh(force);main.post(()->{if(dead)return;refreshing=false;renderSafely();notice.setText(result.failed>0?"部分订阅更新失败，已有频道仍可使用":result.updated>0?"频道已更新 · 长按确认或菜单键收藏":"方向键选择频道 · 确认播放 · 长按确认或菜单键收藏");});}catch(Exception e){main.post(()->{if(!dead){refreshing=false;notice.setText("更新未完成，已有频道仍可使用");}});}});}

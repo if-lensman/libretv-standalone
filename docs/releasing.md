@@ -17,7 +17,7 @@ git -c credential.helper='!gh auth git-credential' push origin HEAD:refs/heads/m
 
 ## 构建与 GitHub Release
 
-增加版本名/版本码，完成变更相关验证。使用项目既定 JDK 17 和隔离 Gradle home，公开构建必须传 `-PincludeLocalSources=false`。签名沿用本机既有更新身份，密钥不入仓。构建、模拟器与真机验收分别记录。
+增加版本名/版本码，完成变更相关验证。使用项目既定 JDK 17 和隔离 Gradle home，公开构建必须传 `-PincludeLocalSources=false`。签名沿用本机既有更新身份，密钥不入仓。最低 API 23 时必须启用 v1 签名（可同时启用 v2/v3），不能沿用仅面向 API 24+ 的禁用 v1 参数；使用 `apksigner verify --verbose` 核对。构建、模拟器与真机验收分别记录。
 
 签名后运行 `scripts/prepare-release.py --apk <signed.apk> --version <x.y.z> --notes <notes.md> --out releases/<version>-public`，校验两类空源并生成 APK、`update-family.libretv.standalone.json` 和 `SHA256SUMS.txt`。提交源码并双推，使用 `gh release create` 上传这三项。Release target 传完整提交 SHA。标签也推到 Gitee；不要把下载分支的提交打成源码版本标签。
 

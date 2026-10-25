@@ -2,7 +2,7 @@ plugins { id 'com.android.library'; id 'org.jetbrains.kotlin.android' }
 android {
     namespace 'com.yinnho.upnpcast'
     compileSdk 35
-    defaultConfig { minSdk 24 }
+    defaultConfig { minSdk 23 }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
