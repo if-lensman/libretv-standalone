@@ -44,7 +44,8 @@ public final class GithubUpdateTest extends TestCase {
         assertEquals(release.size,apk.length());
         // A matching file with a deliberately incorrect expected digest must never be retained.
         JSONObject broken=new JSONObject().put("packageName",BuildConfig.APPLICATION_ID).put("versionCode",release.code)
-            .put("versionName",release.name).put("minSdk",24).put("size",release.size)
+            // Keep this synthetic manifest applicable so Android 6 reaches the digest check.
+            .put("versionName",release.name).put("minSdk",android.os.Build.VERSION.SDK_INT).put("size",release.size)
             .put("sha256",new String(new char[64]).replace('\0','0')).put("downloadUrl",release.downloadUrl);
         try{updater.download(getInstrumentation().getTargetContext(),new AppUpdater.Release(broken),percent->{});fail("Bad digest accepted");}
         catch(java.io.IOException expectedFailure){assertFalse(apk.exists());}
