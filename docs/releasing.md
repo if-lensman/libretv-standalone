@@ -58,3 +58,9 @@ python3 scripts/sync-gitee-updates.py --directory releases/<version>-public --pu
 自动模式：GitHub 直连 → Gitee 下载镜像 → 公共 HTTPS 加速通道。也可仅选 GitHub、Gitee 或加速，并自定义加速前缀。成功获取清单后，本次下载优先沿用该通道。每次下载都校验大小、SHA-256、包名、升级版本码和与已安装 App 相同的签名；任何通道都不能绕过这些校验。
 
 发布后应核对：双平台源码 SHA/标签；GitHub latest 清单；Gitee 匿名清单与 APK；真实加速通道；低版本模拟器下载与恢复安装入口。不可在用户真机运行会卸载/清数据的 instrumentation。旧版首次获取新更新通道之前若无法联网更新，需手动覆盖安装一次；新包无需内置源即可保留原数据。
+
+## 截图与每版宣传材料
+
+用户于2026-10-28要求每次授权发布时，同步整理抖音文案、配图、原始截图和发布说明至同级NAS仓 `../libretv-nas/promo/releases/<version>/`，不再默认放桌面。公开发布说明不加验证章节；内部worklog仍保存证据。
+
+截图作为正式Release附件，不混入APK默认源配置。Gitee脚本可重复传 `--attachment releases/<version>-public/<file.png或zip>`；它只接受公开发布目录下显式选定的图片/ZIP，上传正式Release后匿名核验。`--release-notes <body-template.md>` 支持 `{{asset:filename}}`，上传后替换为该平台实际附件地址，避免跨平台图片引用。App更新清单notes继续使用简短纯改动说明。下载分支保持核心APK/清单/校验文件，不新增宣传素材。

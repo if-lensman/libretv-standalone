@@ -9,6 +9,8 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--directory',type=pathlib.Path,required=True,help='Output of prepare-release.py')
 parser.add_argument('--push',action='store_true',help='Publish artifacts; default only validates')
 parser.add_argument('--token-file',type=pathlib.Path,help='Optional: also publish formal Release via API')
+parser.add_argument('--attachment',type=pathlib.Path,action='append',default=[],help='Explicit public PNG/ZIP attachment inside the release directory')
+parser.add_argument('--release-notes',type=pathlib.Path,help='Optional Release body; {{asset:filename}} resolves to verified formal attachment URLs')
 args=parser.parse_args()
 repo='xdmdpz/libretv-standalone'
 remote='git@gitee.com:'+repo+'.git'
@@ -30,7 +32,19 @@ for line in (folder/'SHA256SUMS.txt').read_text().splitlines():
     digest,filename=line.split()
     assert pathlib.Path(filename).name==filename
     assert hashlib.sha256((folder/filename).read_bytes()).hexdigest()==digest
-print('Public artifacts validated:',data['versionName'],data['versionCode'],flush=True)
+extra_files=[p.resolve() for p in args.attachment]
+assert len({p.name for p in extra_files})==len(extra_files), 'Duplicate attachment names'
+for file in extra_files:
+    assert file.parent==folder and file.is_file(), 'Attachments must be inside the public release directory'
+    assert file.suffix.lower() in ('.png','.jpg','.jpeg','.webp','.zip'), 'Unsupported attachment type'
+formal_files=[apk,manifest,folder/'SHA256SUMS.txt']+extra_files
+assert len({p.name for p in formal_files})==len(formal_files), 'Attachment collides with a required artifact'
+release_notes=args.release_notes.read_text() if args.release_notes else None
+if release_notes is not None:
+    import re
+    for filename in re.findall(r'\{\{asset:([^}]+)\}\}',release_notes):
+        assert filename in {p.name for p in formal_files}, 'Unknown Release attachment: '+filename
+print('Public artifacts validated:' ,data['versionName'],data['versionCode'],flush=True)
 if not args.push:
     print('Validation only; pass --push to publish.');raise SystemExit
 
@@ -98,7 +112,7 @@ if release is None:
 release_id=release['id']
 existing=api('GET','/releases/'+str(release_id)+'/attach_files')
 if isinstance(existing,dict):existing=existing.get('list',existing.get('data',[]))
-for file in [apk,manifest,folder/'SHA256SUMS.txt']:
+for file in formal_files:
     if any(item.get('name')==file.name for item in existing):continue
     boundary='LibreTV'+uuid.uuid4().hex
     body=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{file.name}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode()
@@ -106,12 +120,20 @@ for file in [apk,manifest,folder/'SHA256SUMS.txt']:
     api('POST','/releases/'+str(release_id)+'/attach_files',body=body,content_type='multipart/form-data; boundary='+boundary)
 attachments=api('GET','/releases/'+str(release_id)+'/attach_files')
 if isinstance(attachments,dict):attachments=attachments.get('list',attachments.get('data',[]))
-for file in [apk,manifest,folder/'SHA256SUMS.txt']:
+for file in formal_files:
     item=next((entry for entry in attachments if entry.get('name')==file.name),None)
     assert item is not None, 'Uploaded attachment missing: '+file.name
     url=item.get('browser_download_url')
     assert url and url.startswith('https://gitee.com/'), 'Attachment download URL missing or unexpected'
     with public_opener.open(url,timeout=45) as response:
         assert response.status==200 and hashlib.sha256(response.read()).digest()==hashlib.sha256(file.read_bytes()).digest(), 'Attachment readback mismatch: '+file.name
+if release_notes is not None:
+    rendered=release_notes
+    for item in attachments:
+        rendered=rendered.replace('{{asset:'+item.get('name','')+'}}',item.get('browser_download_url',''))
+    assert '{{asset:' not in rendered, 'Unresolved Release screenshot URL'
+    updated=api('PATCH','/releases/'+str(release_id),payload={'body':rendered})
+    assert updated.get('body')==rendered, 'Release body update mismatch'
+    print('Formal Release screenshot body updated')
 print('Formal Gitee Release attachments anonymously verified: https://gitee.com/'+repo+'/releases/tag/'+tag)
 
