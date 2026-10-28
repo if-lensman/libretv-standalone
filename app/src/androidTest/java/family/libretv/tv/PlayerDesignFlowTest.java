@@ -71,8 +71,9 @@ public final class PlayerDesignFlowTest extends TestCase {
     private void tapSurface(float fraction)throws Exception {
         int[] location=new int[2];float[] point=new float[2];instrument.runOnMainSync(()->{View stage=(View)field("stage");stage.getLocationOnScreen(location);point[0]=location[0]+stage.getWidth()*fraction;point[1]=location[1]+stage.getHeight()*.45f;});
         long down=SystemClock.uptimeMillis();MotionEvent a=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,point[0],point[1],0);a.setSource(InputDevice.SOURCE_TOUCHSCREEN);instrument.sendPointerSync(a);a.recycle();Thread.sleep(40);
-        MotionEvent b=MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,point[0],point[1],0);b.setSource(InputDevice.SOURCE_TOUCHSCREEN);instrument.sendPointerSync(b);b.recycle();instrument.waitForIdleSync();
+        MotionEvent b=MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,point[0],point[1],0);b.setSource(InputDevice.SOURCE_TOUCHSCREEN);instrument.sendPointerSync(b);b.recycle();
     }
+    private void doubleTapSurface(float fraction)throws Exception {tapSurface(fraction);Thread.sleep(80);tapSurface(fraction);instrument.waitForIdleSync();}
     private void chooseDialog(String fieldName,int which){
         instrument.runOnMainSync(()->{AlertDialog d=(AlertDialog)field(fieldName);ListView list=d.getListView();list.performItemClick(list.getChildAt(which),which,list.getAdapter().getItemId(which));});instrument.waitForIdleSync();
     }
@@ -85,7 +86,7 @@ public final class PlayerDesignFlowTest extends TestCase {
         ArrayList<String> urls=new ArrayList<>();for(int i=0;i<24;i++)urls.add(ROOT+"/demo.mp4");
         activity=instrument.startActivitySync(new Intent(context,DirectPlayerActivity.class).putStringArrayListExtra("episodes",urls).putExtra("index",2).putExtra("title","山海之间").putExtra("source",source().toString()).putExtra("item",item().toString()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));ready();
         at(20000);instrument.runOnMainSync(()->((PlayerView)field("playerView")).hideController());
-        tapSurface(.85f);awaitPosition(30000);tapSurface(.15f);awaitPosition(20000);
+        doubleTapSurface(.85f);awaitPosition(30000);doubleTapSurface(.15f);awaitPosition(20000);
         instrument.runOnMainSync(()->assertFalse(player().getPlayWhenReady()));
         assertFalse(texts().contains("快退10秒"));assertFalse(texts().contains("快进10秒"));
         click("第04集");ready();assertEquals(3,field("index"));click("上一集");ready();assertEquals(2,field("index"));
@@ -95,7 +96,7 @@ public final class PlayerDesignFlowTest extends TestCase {
         showPhone();capture("player-phone-landscape.png");
         click("更多");Thread.sleep(150);capture("player-phone-more.png");instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         instrument.runOnMainSync(()->((PlayerView)field("playerView")).hideController());Thread.sleep(100);capture("player-phone-hidden.png");
-        tapSurface(.85f);awaitPosition(30000);capture("player-phone-seek.png");tapSurface(.15f);awaitPosition(20000);
+        doubleTapSurface(.85f);awaitPosition(30000);capture("player-phone-seek.png");doubleTapSurface(.15f);awaitPosition(20000);
         showPhone();click("字幕");disableSubtitles("subtitles");
         click("更多");chooseDialog("dialog",0);assertTrue("Restart did not seek to start",position()<1500);instrument.runOnMainSync(()->player().pause());
         click("更多");chooseDialog("dialog",1);assertTrue(context.getSharedPreferences("standalone-player",0).getBoolean("autoNext",false));

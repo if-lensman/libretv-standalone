@@ -165,7 +165,7 @@ public final class DirectPlayerActivity extends Activity {
             NasClient direct = new NasClient(this);
             player = new ExoPlayer.Builder(this).setMediaSourceFactory(new DefaultMediaSourceFactory(() -> new NasDataSource(direct))).build();
             playerView.setPlayer(player); playerView.setKeepScreenOn(true);
-            stage.bind(player,playerView,topChrome,bottomChrome);stage.setSingleTapSeek(true);
+            stage.bind(player,playerView,topChrome,bottomChrome);stage.setVodSeekGestures(true);
             subtitles = new SubtitleMenu(this, player, subtitle, playerView.getSubtitleView(), settings, this::resumeControls, true);
             player.setPlaybackSpeed(settings.getFloat("speed", 1));
             player.addListener(new Player.Listener() {

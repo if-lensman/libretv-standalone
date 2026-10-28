@@ -62,8 +62,12 @@ public final class PlaybackGestureTest extends TestCase {
     private List<View> views(){List<View> out=new ArrayList<>();instrument.runOnMainSync(()->collect(activity.getWindow().getDecorView(),out));return out;}
     private void collect(View v,List<View> out){out.add(v);if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++)collect(((ViewGroup)v).getChildAt(i),out);}
     private void capture(String name)throws Exception {android.graphics.Bitmap b=instrument.getUiAutomation().takeScreenshot();try(java.io.FileOutputStream o=new java.io.FileOutputStream(new java.io.File(context.getFilesDir(),name))){b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,o);}b.recycle();}
-    public void testSingleTapLeftBackRightForwardAndClamp()throws Exception {
-        launch();tap(.15f,.5f);awaitPosition(0);tap(.85f,.5f);awaitPosition(10000);at(1000);tap(.15f,.5f);awaitPosition(0);
+    public void testDoubleTapSeeksTenSecondsAndSingleTapOnlyTogglesControls()throws Exception {
+        launch();tap(.15f,.5f);Thread.sleep(450);awaitPosition(6000);
+        instrument.runOnMainSync(()->assertTrue("Single tap must show controls",video().isControllerFullyVisible()));
+        tap(.85f,.5f);Thread.sleep(450);awaitPosition(6000);
+        instrument.runOnMainSync(()->assertFalse("Single tap must hide controls",video().isControllerFullyVisible()));
+        doubleTap(.15f);awaitPosition(0);doubleTap(.85f);awaitPosition(10000);at(1000);doubleTap(.15f);awaitPosition(0);
         instrument.runOnMainSync(()->assertFalse("Seek resumed a paused player",player().getPlayWhenReady()));
     }
     public void testHorizontalPreviewCommitsOnReleaseAndCancelDoesNotSeek()throws Exception {
@@ -106,7 +110,7 @@ public final class PlaybackGestureTest extends TestCase {
         launch();instrument.runOnMainSync(()->stage().bind(new androidx.media3.common.ForwardingPlayer(player()){
             @Override public boolean isCurrentMediaItemSeekable(){return false;}
         },video(),(View)field("topChrome"),(View)field("bottomChrome")));
-        tap(.15f,.5f);awaitPosition(6000);
+        doubleTap(.15f);awaitPosition(6000);
         assertTrue(views().stream().anyMatch(v->v instanceof TextView&&v.isShown()&&((TextView)v).getText().toString().contains("暂不支持调整进度")));
         swipe(.3f,.5f,.7f,.5f,false);awaitPosition(6000);
     }

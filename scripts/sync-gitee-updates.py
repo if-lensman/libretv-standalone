@@ -3,7 +3,7 @@
 Optionally publish a formal Gitee Release with a projects-scoped token file.
 No credentials or private catalogs are copied into Git objects.
 """
-import argparse, hashlib, json, os, pathlib, subprocess, tempfile, urllib.error, urllib.request, uuid, zipfile
+import argparse, hashlib, json, os, pathlib, subprocess, tempfile, time, urllib.error, urllib.request, uuid, zipfile
 
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--directory',type=pathlib.Path,required=True,help='Output of prepare-release.py')
@@ -74,11 +74,19 @@ print('Download mirror published:', 'https://gitee.com/'+repo+'/tree/updates')
 
 # Read back anonymously. A login page or a stale response is a failed publication.
 public_opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+def public_download(url):
+    for attempt in range(3):
+        try:
+            with public_opener.open(url,timeout=45) as response:
+                assert response.status==200
+                return response.read()
+        except (urllib.error.URLError,TimeoutError,ConnectionResetError):
+            if attempt==2:raise RuntimeError('Anonymous Gitee download failed after retries') from None
+            time.sleep(attempt+1)
 for file in [apk,manifest]:
     url='https://gitee.com/'+repo+'/raw/updates/'+file.name
-    with public_opener.open(url,timeout=45) as response:
-        body=response.read()
-        assert response.status==200 and hashlib.sha256(body).digest()==hashlib.sha256(file.read_bytes()).digest()
+    body=public_download(url)
+    assert hashlib.sha256(body).digest()==hashlib.sha256(file.read_bytes()).digest()
 print('Anonymous manifest and APK downloads verified')
 if not args.token_file:
     print('Formal Gitee Release not created: API token not supplied. SSH download mirror is available.')
@@ -98,11 +106,14 @@ def api(method,path,payload=None,body=None,content_type=None):
     if payload is not None:body=json.dumps(payload,ensure_ascii=False).encode();content_type='application/json'
     if content_type:request_headers['Content-Type']=content_type
     req=urllib.request.Request(base+path,data=body,headers=request_headers,method=method)
-    try:
-        with auth_opener.open(req,timeout=60) as response:return json.load(response)
-    except urllib.error.HTTPError as error:
-        # Never log request headers or token-bearing URLs.
-        raise RuntimeError('Gitee API '+method+' '+path+' returned HTTP '+str(error.code)) from None
+    for attempt in range(3):
+        try:
+            with auth_opener.open(req,timeout=60) as response:return json.load(response)
+        except urllib.error.HTTPError as error:
+            if method in ('GET','PATCH') and error.code in (502,503,504) and attempt<2:
+                time.sleep(attempt+1);continue
+            # Never log request headers or token-bearing URLs.
+            raise RuntimeError('Gitee API '+method+' '+path+' returned HTTP '+str(error.code)) from None
 version=data['versionName'].split('-')[0];tag='v'+version
 # Idempotent release lookup avoids duplicates after a partial upload.
 releases=api('GET','/releases?per_page=100')
@@ -125,8 +136,7 @@ for file in formal_files:
     assert item is not None, 'Uploaded attachment missing: '+file.name
     url=item.get('browser_download_url')
     assert url and url.startswith('https://gitee.com/'), 'Attachment download URL missing or unexpected'
-    with public_opener.open(url,timeout=45) as response:
-        assert response.status==200 and hashlib.sha256(response.read()).digest()==hashlib.sha256(file.read_bytes()).digest(), 'Attachment readback mismatch: '+file.name
+    assert hashlib.sha256(public_download(url)).digest()==hashlib.sha256(file.read_bytes()).digest(), 'Attachment readback mismatch: '+file.name
 if release_notes is not None:
     rendered=release_notes
     for item in attachments:

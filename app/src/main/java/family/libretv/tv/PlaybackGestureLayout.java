@@ -36,7 +36,7 @@ final class PlaybackGestureLayout extends FrameLayout {
     private int startVolume,mode;
     private long startPosition,targetPosition;
     private Object mediaId;
-    private boolean canceled,doubleTap,singleTapSeek;
+    private boolean canceled,doubleTap,vodGestures;
     private final Runnable dismiss=()->{if(feedback!=null)feedback.setVisibility(GONE);};
 
     PlaybackGestureLayout(Activity activity) {
@@ -51,11 +51,14 @@ final class PlaybackGestureLayout extends FrameLayout {
             }
             @Override public boolean onDoubleTap(MotionEvent e){
                 doubleTap=true;
-                if(canSeek()) {
-                    long delta=e.getX()<getWidth()/2f?-5000:5000;
+                float fraction=e.getX()/Math.max(1,getWidth());
+                if(vodGestures&&fraction>=.33f&&fraction<=.67f)return true;
+                if(sameMedia()&&canSeek()) {
+                    long step=vodGestures?10000:5000;
+                    long delta=fraction<.5f?-step:step;
                     long target=clamp(player.getCurrentPosition()+delta,player.getDuration());
-                    player.seekTo(target);show((delta<0?"后退 5 秒":"前进 5 秒")+"\n"+time(target));
-                } else show("这个频道暂不支持调整进度");
+                    player.seekTo(target);show((delta<0?"后退 ":"前进 ")+(step/1000)+" 秒\n"+time(target));
+                } else show(vodGestures?"当前视频暂不支持调整进度":"这个频道暂不支持调整进度");
                 hideLater();return true;
             }
         },handler);
@@ -63,7 +66,7 @@ final class PlaybackGestureLayout extends FrameLayout {
     }
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     void bind(Player player,PlayerView video,View... excluded){this.player=player;this.video=video;this.excluded=excluded;}
-    void setSingleTapSeek(boolean enabled){singleTapSeek=enabled;}
+    void setVodSeekGestures(boolean enabled){vodGestures=enabled;}
     void release(){cancelDetector();handler.removeCallbacksAndMessages(null);player=null;video=null;if(feedback!=null)feedback.setVisibility(GONE);}
     private boolean enabledFor(MotionEvent e){
         UiModeManager ui=(UiModeManager)getContext().getSystemService(Context.UI_MODE_SERVICE);
@@ -96,7 +99,7 @@ final class PlaybackGestureLayout extends FrameLayout {
             canceled=true;mode=0;cancelDetector();if(feedback!=null)feedback.setVisibility(GONE);return true;
         }
         if(canceled)return true;
-        if(!singleTapSeek)taps.onTouchEvent(e);
+        taps.onTouchEvent(e);
         if(action==MotionEvent.ACTION_MOVE&&!doubleTap){
             float dx=e.getX()-startX,dy=e.getY()-startY;
             if(mode==0&&Math.max(Math.abs(dx),Math.abs(dy))>threshold){
@@ -123,13 +126,6 @@ final class PlaybackGestureLayout extends FrameLayout {
         }
         if(action==MotionEvent.ACTION_UP){
             if(mode==1&&sameMedia()&&canSeek())player.seekTo(clamp(targetPosition,player.getDuration()));
-            if(singleTapSeek&&mode==0&&Math.hypot(e.getX()-startX,e.getY()-startY)<=threshold){
-                float fraction=e.getX()/Math.max(1,getWidth());
-                if(fraction<.33f||fraction>.67f){
-                    if(sameMedia()&&canSeek()){long delta=fraction<.33f?-10000:10000;long target=clamp(player.getCurrentPosition()+delta,player.getDuration());player.seekTo(target);show((delta<0?"后退 10 秒":"前进 10 秒")+"\n"+time(target));}
-                    else show("当前视频暂不支持调整进度");hideLater();
-                }else if(video!=null){if(video.isControllerFullyVisible())video.hideController();else video.showController();}
-            }
             if(mode!=0)hideLater();mode=0;performClick();
         }
         return true;
