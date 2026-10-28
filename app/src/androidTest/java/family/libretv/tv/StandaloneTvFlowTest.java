@@ -22,7 +22,7 @@ public final class StandaloneTvFlowTest extends TestCase {
     private final String root="http://10.0.2.2:19001";
     @Override protected void setUp()throws Exception {
         instrument=InstrumentationRegistry.getInstrumentation();context=instrument.getTargetContext();
-        for(String name:new String[]{"standalone-library","standalone-playback","MainActivity","recommendations"}) {
+        for(String name:new String[]{"standalone-library","standalone-playback","MainActivity","family.libretv.tv.MainActivity","recommendations"}) {
             SharedPreferences prefs=context.getSharedPreferences(name,0);backups.put(name,new HashMap<>(prefs.getAll()));prefs.edit().clear().commit();
         }
         repo=new LocalRepository(context);
@@ -125,11 +125,11 @@ public final class StandaloneTvFlowTest extends TestCase {
         launch();click("播放列表");awaitPrefix("Fixture title · TV source /cms · 第 2 集 · 00:04");screenshot("tv-local-playlist.png");
         click("继续播放 · Fixture title");ready();long[] pos={0};instrument.runOnMainSync(()->{player().pause();pos[0]=player().getCurrentPosition();});
         assertEquals(1,field("episodeIndex"));assertTrue("Seek was not restored: "+pos[0],pos[0]>=3900);
-        key(KeyEvent.KEYCODE_MENU);key(KeyEvent.KEYCODE_DPAD_DOWN);
-        assertTrue("Cannot navigate down to previous episode",focused() instanceof Button && "上一集".contentEquals(((Button)focused()).getText()));
+        key(KeyEvent.KEYCODE_MENU);key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertTrue("Cannot navigate right to previous episode",focused() instanceof Button && "上一集".contentEquals(((Button)focused()).getText()));
         key(KeyEvent.KEYCODE_DPAD_CENTER);ready();assertEquals(0,field("episodeIndex"));
-        key(KeyEvent.KEYCODE_MENU);key(KeyEvent.KEYCODE_DPAD_DOWN);
-        assertTrue("Cannot navigate down to next episode",focused() instanceof Button && "下一集".contentEquals(((Button)focused()).getText()));
+        key(KeyEvent.KEYCODE_MENU);key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertTrue("Cannot navigate right to next episode",focused() instanceof Button && "下一集".contentEquals(((Button)focused()).getText()));
         key(KeyEvent.KEYCODE_DPAD_CENTER);ready();assertEquals(1,field("episodeIndex"));
         instrument.runOnMainSync(()->{player().seekTo(5000);player().pause();});screenshot("tv-player-controls.png");close();
         assertEquals(1,new PlaybackStore(context).find(source,item).getInt("index"));

@@ -62,8 +62,8 @@ public final class PlaybackGestureTest extends TestCase {
     private List<View> views(){List<View> out=new ArrayList<>();instrument.runOnMainSync(()->collect(activity.getWindow().getDecorView(),out));return out;}
     private void collect(View v,List<View> out){out.add(v);if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++)collect(((ViewGroup)v).getChildAt(i),out);}
     private void capture(String name)throws Exception {android.graphics.Bitmap b=instrument.getUiAutomation().takeScreenshot();try(java.io.FileOutputStream o=new java.io.FileOutputStream(new java.io.File(context.getFilesDir(),name))){b.compress(android.graphics.Bitmap.CompressFormat.PNG,100,o);}b.recycle();}
-    public void testDoubleTapLeftBackRightForwardAndClamp()throws Exception {
-        launch();doubleTap(.25f);awaitPosition(1000);doubleTap(.75f);awaitPosition(6000);at(1000);doubleTap(.25f);awaitPosition(0);
+    public void testSingleTapLeftBackRightForwardAndClamp()throws Exception {
+        launch();tap(.15f,.5f);awaitPosition(0);tap(.85f,.5f);awaitPosition(10000);at(1000);tap(.15f,.5f);awaitPosition(0);
         instrument.runOnMainSync(()->assertFalse("Seek resumed a paused player",player().getPlayWhenReady()));
     }
     public void testHorizontalPreviewCommitsOnReleaseAndCancelDoesNotSeek()throws Exception {
@@ -86,7 +86,7 @@ public final class PlaybackGestureTest extends TestCase {
     }
     public void testSingleTapAndExistingEpisodeButtonsStillReceiveTouches()throws Exception {
         launch();tap(.5f,.5f);Thread.sleep(450);boolean[] visible={false};instrument.runOnMainSync(()->visible[0]=video().isControllerFullyVisible());assertTrue(visible[0]);
-        View next=views().stream().filter(v->v instanceof Button&&"下一集".contentEquals(((Button)v).getText())).findFirst().orElseThrow();Rect r=new Rect();instrument.runOnMainSync(()->assertTrue(next.getGlobalVisibleRect(r)));long down=SystemClock.uptimeMillis();event(down,MotionEvent.ACTION_DOWN,r.centerX(),r.centerY());Thread.sleep(40);event(down,MotionEvent.ACTION_UP,r.centerX(),r.centerY());Thread.sleep(300);ready();assertEquals(1,field("index"));
+        View next=views().stream().filter(v->v instanceof Button&&"下一集".contentEquals(((Button)v).getText())).findFirst().orElseThrow(()->new AssertionError("Expected player control"));Rect r=new Rect();instrument.runOnMainSync(()->assertTrue(next.getGlobalVisibleRect(r)));long down=SystemClock.uptimeMillis();event(down,MotionEvent.ACTION_DOWN,r.centerX(),r.centerY());Thread.sleep(40);event(down,MotionEvent.ACTION_UP,r.centerX(),r.centerY());Thread.sleep(300);ready();assertEquals(1,field("index"));
     }
     public void testLiveGesturesStayInsideWindowAndNeverWriteVodHistory()throws Exception {
         LiveRepository repo=new LiveRepository(context);repo.importPlaylist("Gesture live",LocalRepository.fetch(ROOT+"/live/list"));String id=repo.channels().getJSONObject(0).getString("id");
@@ -96,7 +96,7 @@ public final class PlaybackGestureTest extends TestCase {
     }
     public void testNativeTimeBarStillScrubsWithoutSurfaceGesture()throws Exception {
         launch();at(3000);instrument.runOnMainSync(()->video().showController());Thread.sleep(150);
-        View bar=views().stream().filter(v->v instanceof TimeBar&&v.isShown()).findFirst().orElseThrow();Rect r=new Rect();instrument.runOnMainSync(()->assertTrue(bar.getGlobalVisibleRect(r)));
+        View bar=views().stream().filter(v->v instanceof TimeBar&&v.isShown()).findFirst().orElseThrow(()->new AssertionError("Expected player control"));Rect r=new Rect();instrument.runOnMainSync(()->assertTrue(bar.getGlobalVisibleRect(r)));
         long down=SystemClock.uptimeMillis();float x=r.left+r.width()*.2f,y=r.centerY();event(down,MotionEvent.ACTION_DOWN,x,y);
         for(int i=1;i<=5;i++){Thread.sleep(30);event(down,MotionEvent.ACTION_MOVE,x+r.width()*.45f*i/5,y);}
         assertFalse(views().stream().anyMatch(v->v instanceof TextView&&v.isShown()&&((TextView)v).getText().toString().startsWith("进度 ")));
@@ -106,7 +106,7 @@ public final class PlaybackGestureTest extends TestCase {
         launch();instrument.runOnMainSync(()->stage().bind(new androidx.media3.common.ForwardingPlayer(player()){
             @Override public boolean isCurrentMediaItemSeekable(){return false;}
         },video(),(View)field("topChrome"),(View)field("bottomChrome")));
-        doubleTap(.25f);awaitPosition(6000);
+        tap(.15f,.5f);awaitPosition(6000);
         assertTrue(views().stream().anyMatch(v->v instanceof TextView&&v.isShown()&&((TextView)v).getText().toString().contains("暂不支持调整进度")));
         swipe(.3f,.5f,.7f,.5f,false);awaitPosition(6000);
     }

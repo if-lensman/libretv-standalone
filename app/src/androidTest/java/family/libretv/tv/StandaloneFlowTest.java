@@ -182,9 +182,9 @@ public final class StandaloneFlowTest extends TestCase {
     }
     public void testAutoNextCanBeDisabledAndStopsAtLastEpisode()throws Exception{
         launchSeries(0);
-        instrument.runOnMainSync(()->{for(View v:findViewsOnMain())if(v instanceof CheckBox)((CheckBox)v).setChecked(false);currentPlayer().seekTo(currentPlayer().getDuration()-100);});
+        instrument.runOnMainSync(()->{for(View v:findViewsOnMain())if(v instanceof CompoundButton)((CompoundButton)v).setChecked(false);currentPlayer().seekTo(currentPlayer().getDuration()-100);});
         Thread.sleep(1200);assertEquals(0,currentIndex());
-        instrument.runOnMainSync(()->{for(View v:findViewsOnMain())if(v instanceof CheckBox)((CheckBox)v).setChecked(true);currentPlayer().seekTo(0);currentPlayer().play();currentPlayer().seekTo(currentPlayer().getDuration()-100);});
+        instrument.runOnMainSync(()->{for(View v:findViewsOnMain())if(v instanceof CompoundButton)((CompoundButton)v).setChecked(true);currentPlayer().seekTo(0);currentPlayer().play();currentPlayer().seekTo(currentPlayer().getDuration()-100);});
         long end=System.currentTimeMillis()+6000;while(currentIndex()!=1 && System.currentTimeMillis()<end)Thread.sleep(100);assertEquals(1,currentIndex());awaitPlayer();
         instrument.runOnMainSync(()->currentPlayer().seekTo(currentPlayer().getDuration()-100));Thread.sleep(1200);assertEquals(1,currentIndex());
     }

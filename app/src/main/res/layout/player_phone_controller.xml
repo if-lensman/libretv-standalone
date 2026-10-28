@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#22000000">
+    <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center" android:gravity="center" android:orientation="horizontal">
+        <Button android:id="@+id/player_previous_episode" android:layout_width="56dp" android:layout_height="56dp" android:layout_marginEnd="28dp" android:contentDescription="上一集" android:background="@android:color/transparent" />
+        <ImageButton android:id="@id/exo_play_pause" android:layout_width="64dp" android:layout_height="64dp" android:padding="16dp" android:background="@drawable/player_pause_ring" android:tint="#FFFFFF" android:contentDescription="播放或暂停" />
+        <Button android:id="@+id/player_next_episode" android:layout_width="56dp" android:layout_height="56dp" android:layout_marginStart="28dp" android:contentDescription="下一集" android:background="@android:color/transparent" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/player_timeline" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="bottom" android:orientation="vertical" android:paddingStart="20dp" android:paddingEnd="20dp" android:paddingBottom="4dp" android:background="@drawable/player_bottom">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <TextView android:id="@id/exo_position" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:textColor="#FFFFFF" android:textSize="12sp" />
+            <TextView android:id="@id/exo_duration" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#C3CAD5" android:textSize="12sp" />
+        </LinearLayout>
+        <androidx.media3.ui.DefaultTimeBar android:id="@id/exo_progress" android:layout_width="match_parent" android:layout_height="32dp" app:played_color="#F15B9B" app:scrubber_color="#F15B9B" app:buffered_color="#AAAAB5C5" app:unplayed_color="#55AAB5C5" app:bar_height="3dp" app:scrubber_enabled_size="10dp" />
+    </LinearLayout>
+</FrameLayout>
