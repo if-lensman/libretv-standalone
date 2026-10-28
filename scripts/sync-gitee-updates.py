@@ -44,7 +44,7 @@ if release_notes is not None:
     import re
     for filename in re.findall(r'\{\{asset:([^}]+)\}\}',release_notes):
         assert filename in {p.name for p in formal_files}, 'Unknown Release attachment: '+filename
-print('Public artifacts validated:' ,data['versionName'],data['versionCode'],flush=True)
+print('Public artifacts validated:',data['versionName'],data['versionCode'],flush=True)
 if not args.push:
     print('Validation only; pass --push to publish.');raise SystemExit
 
@@ -132,7 +132,7 @@ if release_notes is not None:
     for item in attachments:
         rendered=rendered.replace('{{asset:'+item.get('name','')+'}}',item.get('browser_download_url',''))
     assert '{{asset:' not in rendered, 'Unresolved Release screenshot URL'
-    updated=api('PATCH','/releases/'+str(release_id),payload={'body':rendered})
+    updated=api('PATCH','/releases/'+str(release_id),payload={'tag_name':release['tag_name'],'name':release['name'],'body':rendered})
     assert updated.get('body')==rendered, 'Release body update mismatch'
     print('Formal Release screenshot body updated')
 print('Formal Gitee Release attachments anonymously verified: https://gitee.com/'+repo+'/releases/tag/'+tag)
