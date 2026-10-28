@@ -112,7 +112,7 @@ public final class DirectPlayerActivity extends Activity {
         episodeCaption=label("",12);episodeCaption.setTextColor(PlayerStyle.MUTED);if(landscape)titleBox.addView(episodeCaption);
         Button rotate=PlayerStyle.action(this,"","rotate",false);rotate.setContentDescription("横屏 / 竖屏");heading.addView(rotate,new LinearLayout.LayoutParams(dp(48),dp(48)));rotate.setOnClickListener(v->changeOrientation());
         Button moreTop=PlayerStyle.action(this,"","more",false);moreTop.setContentDescription("更多");heading.addView(moreTop,new LinearLayout.LayoutParams(dp(44),dp(48)));moreTop.setOnClickListener(v->showMore());
-        bottomChrome=column();bottomChrome.setBackgroundResource(R.drawable.player_bottom);
+        bottomChrome=column();bottomChrome.setBackgroundColor(Color.TRANSPARENT);
         autoNext=new Switch(this);autoNext.setText("自动下一集");autoNext.setTextColor(Color.WHITE);autoNext.setThumbTintList(new android.content.res.ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{PlayerStyle.PINK,PlayerStyle.MUTED}));autoNext.setTrackTintList(android.content.res.ColorStateList.valueOf(0x66344253));
         autoNext.setChecked(settings.getBoolean("autoNext",true));autoNext.setOnCheckedChangeListener((v,on)->settings.edit().putBoolean("autoNext",on).apply());
         LinearLayout root=column();root.setBackgroundColor(PlayerStyle.NAVY);
@@ -234,6 +234,8 @@ public final class DirectPlayerActivity extends Activity {
         if(playerView==null||bottomChrome==null)return;
         View timeline=playerView.findViewById(R.id.player_timeline);
         if(timeline!=null){FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)timeline.getLayoutParams();int margin=landscape&&controlsVisible?bottomChrome.getHeight():0;if(p.bottomMargin!=margin){p.bottomMargin=margin;timeline.setLayoutParams(p);}}
+        View shade=playerView.findViewById(R.id.player_lower_shade);
+        if(shade!=null){ViewGroup.LayoutParams p=shade.getLayoutParams();int height=landscape?Math.max(dp(160),bottomChrome.getHeight()+(timeline==null?0:timeline.getHeight())+dp(60)):dp(90);if(p.height!=height){p.height=height;shade.setLayoutParams(p);}}
         if(playerView.getSubtitleView()!=null&&playerView.getSubtitleView().getLayoutParams() instanceof FrameLayout.LayoutParams){
             FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)playerView.getSubtitleView().getLayoutParams();int margin=controlsVisible?(landscape?bottomChrome.getHeight()+dp(60):dp(48)):0;
             if(p.bottomMargin!=margin){p.bottomMargin=margin;playerView.getSubtitleView().setLayoutParams(p);}
