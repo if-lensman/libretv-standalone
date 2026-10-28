@@ -60,6 +60,58 @@ public final class StandaloneFlowTest extends TestCase {
         try{repo.importSources("{\"sites\":[{\"type\":3,\"api\":\"spider.jar\"}]}");fail();}catch(java.io.IOException expected){}
         assertEquals(1,repo.sources().length());
     }
+    public void testManualSingleSourceParsingAndPersistence() throws Exception {
+        repo.saveSources(new JSONArray());
+        String single = new JSONObject().put("name", "手动测试源").put("url", "https://manual.example/api.php/provide/vod/").toString();
+        assertEquals(1, repo.importSources(single));
+        assertEquals("https://manual.example/api.php/provide/vod", new LocalRepository(context).sources().getJSONObject(0).getString("url"));
+        assertEquals(0, repo.importSources(single));
+        assertEquals(1, LocalRepository.parseSources("{\"sites\":[{\"name\":\"TVBox 测试\",\"type\":1,\"api\":\"https://tvbox.example/api\"}]}").length());
+        try { repo.importSources("{\"name\":\"无效\",\"url\":\"invalid\"}"); fail("Invalid URL accepted"); }
+        catch (java.io.IOException expected) { assertTrue(expected.getMessage().contains("HTTP(S)")); }
+        assertEquals(1, repo.sources().length());
+    }
+
+    public void testPhoneManualSourceFeedbackAndSave() throws Exception {
+        repo.saveSources(new JSONArray());
+        activity=instrument.startActivitySync(new Intent(context,PhoneActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        openSources();
+        fillManual("手动测试源", ""); click("添加来源"); await("源地址必须是有效 HTTP(S) 地址");
+        assertEquals(0, repo.sources().length());
+        List<View> current=views();
+        assertTrue(current.stream().anyMatch(v -> v instanceof TextView && "源地址必须是有效 HTTP(S) 地址".contentEquals(((TextView)v).getText()) && v.getParent() instanceof LinearLayout && ((LinearLayout)v.getParent()).getChildAt(0) instanceof TextView && "手动添加来源".contentEquals(((TextView)((LinearLayout)v.getParent()).getChildAt(0)).getText())));
+        fillManual("  手动测试源  ", "https://manual.example/api.php/provide/vod/"); click("添加来源"); await("来源已添加");
+        assertEquals(1,new LocalRepository(context).sources().length());
+        assertEquals("手动测试源",repo.sources().getJSONObject(0).getString("name"));
+        await("删除 · 手动测试源");
+        fillManual("重复", "https://manual.example/api.php/provide/vod"); click("添加来源"); await("该来源地址已存在，无需重复添加");
+        assertEquals(1,repo.sources().length());
+    }
+    public void testPhoneSeparatesVideoAndLiveSourceSettings() throws Exception {
+        activity=instrument.startActivitySync(new Intent(context,PhoneActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        click("设置"); await("扫码添加视频源"); await("扫码添加直播源");
+        View video=null,live=null;
+        for(View v:views()) if(v instanceof Button) {
+            if("扫码添加视频源".contentEquals(((Button)v).getText())) video=v;
+            if("扫码添加直播源".contentEquals(((Button)v).getText())) live=v;
+        }
+        assertNotNull(video);assertNotNull(live);assertNotSame(video.getParent(),live.getParent());
+        assertFalse(texts().contains("扫码添加来源"));
+        click("影视来源");await("视频来源配置");await("手动添加来源");
+        assertFalse(texts().contains("导入 M3U 文件"));
+        click("设置");click("直播订阅");await("导入 M3U 文件");await("添加直播订阅");
+        assertFalse(texts().contains("手动添加来源"));assertFalse(texts().contains("添加来源"));
+    }
+
+    private void fillManual(String name, String url) {
+        List<View> all=views();
+        instrument.runOnMainSync(()->{ for(View v:all) if(v instanceof EditText) {
+            EditText input=(EditText)v;
+            if("源名称".contentEquals(input.getHint())) input.setText(name);
+            if("来源地址".contentEquals(input.getHint())) input.setText(url);
+        }});
+    }
+
     public void testSearchDetailAndLocalFavorites()throws Exception{
         JSONObject s=source("/cms");repo.saveSources(new JSONArray().put(s).put(source("/bad")));
         JSONObject response=repo.search("Fixture",repo.sources());assertEquals(2,response.getJSONArray("list").length());assertEquals(1,response.getJSONArray("failures").length());
@@ -359,7 +411,7 @@ public final class StandaloneFlowTest extends TestCase {
     private void collect(View view,List<View> out){out.add(view);if(view instanceof ViewGroup){ViewGroup group=(ViewGroup)view;for(int i=0;i<group.getChildCount();i++)collect(group.getChildAt(i),out);}}
     private List<String> texts(){List<String> out=new ArrayList<>();for(View v:views())if(v instanceof TextView)out.add(((TextView)v).getText().toString());return out;}
     private void await(String text)throws Exception{long end=System.currentTimeMillis()+10000;while(System.currentTimeMillis()<end){if(texts().contains(text))return;Thread.sleep(100);}fail("Missing UI: "+text+"; "+texts());}
-    private void openSources()throws Exception{click("设置");await("影视来源");click("影视来源");await("来源配置");}
+    private void openSources()throws Exception{click("设置");await("影视来源");click("影视来源");await("视频来源配置");}
     private void openLibrary(String label)throws Exception{click("历史");await("观看历史");if(!"观看历史".equals(label))click(label);}
     private void click(String text)throws Exception{for(View v:views())if(v instanceof TextView && ((TextView)v).getText().toString().equals(text)){View target=v;while(!target.isClickable() && target.getParent() instanceof View)target=(View)target.getParent();View action=target;instrument.runOnMainSync(action::performClick);instrument.waitForIdleSync();return;}fail("Missing action: "+text);}
 }

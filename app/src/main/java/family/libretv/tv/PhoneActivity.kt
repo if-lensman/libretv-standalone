@@ -220,16 +220,19 @@ class PhoneActivity : Activity() {
     private fun hideKeyboard() {
         currentFocus?.let { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(it.windowToken,0) }
     }
-    private fun work(hint: String, block: suspend () -> Unit) {
+    private fun work(hint: String, feedback: TextView? = null, block: suspend () -> Unit) {
         if (busy) return
-        val ticket = generation; busy = true; notice.text = hint
+        val ticket = generation; busy = true; notice.text = hint; feedback?.text = hint
         scope.launch {
             try { block() }
             catch (e: CancellationException) { throw e }
-            catch (e: Exception) { if(ticket == generation) notice.text = when(e) {
+            catch (e: Exception) { if(ticket == generation) {
+                val message = when(e) {
                 is NasClient.ApiException -> if(e.status == 401) "登录已失效，请返回重新登录" else "NAS 请求失败（${e.status}）"
                 is IllegalArgumentException -> e.message ?: "参数错误"
                 else -> e.message ?: "操作失败，请检查源站或接收设备"
+                }
+                notice.text = message; feedback?.text = message
             } }
             finally { if(ticket == generation) busy = false }
         }
@@ -237,9 +240,9 @@ class PhoneActivity : Activity() {
     private suspend fun request(path: String, body: JSONObject? = null, method: String = if(body == null) "GET" else "POST"): JSONObject =
         withContext(Dispatchers.IO) { client.request(path, body, method) }
 
-    private fun login(automatic: Boolean = false) {
-        screen("config", "来源配置")
-        content.addView(text("管理影视来源，支持扫码、文件或订阅导入。", 14f))
+    private fun login(manualMessage: String? = null) {
+        screen("config", "视频来源配置")
+        content.addView(text("用于电影、电视剧点播，支持 CMS JSON 来源或订阅。直播 M3U 请到直播源添加。", 14f))
         val box = section("导入影视来源")
         button("扫码配置源", box, true) { startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),412) }
         button("显示来源二维码", box) {
@@ -262,12 +265,21 @@ class PhoneActivity : Activity() {
         val manual = section("手动添加来源")
         val name = input("源名称", "", parent = manual)
         val url = input("来源地址", "", parent = manual)
+        val manualFeedback = text(manualMessage.orEmpty(), 14f).apply {
+            setTextColor(accentColor); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
         button("添加来源", manual) {
-            val value = JSONObject().put("name", name.text.toString().ifBlank { "自定义源" }).put("url",url.text.toString()).toString()
-            work("正在保存…") {
-                withContext(Dispatchers.IO) { client.local.importSources(value) }
-                sources=client.local.sources(); login(); notice.text="已保存"
+            hideKeyboard()
+            val value = JSONObject().put("name", name.text.toString().trim().ifBlank { "自定义源" }).put("url",url.text.toString()).toString()
+            work("正在保存…", manualFeedback) {
+                val count = withContext(Dispatchers.IO) { client.local.importSources(value) }
+                sources=client.local.sources()
+                login(if(count > 0) "来源已添加" else "该来源地址已存在，无需重复添加")
             }
+        }
+        manual.addView(manualFeedback)
+        if(manualMessage != null) manualFeedback.post {
+            manualFeedback.requestRectangleOnScreen(android.graphics.Rect(0, 0, manualFeedback.width, manualFeedback.height), true)
         }
         button("导出来源配置", box) {
             pendingExport = client.local.exportSources()
@@ -484,13 +496,17 @@ class PhoneActivity : Activity() {
     }
     private fun settingsScreen() {
         screen("settings","设置")
-        val sourceSettings=section("内容来源")
-        button("影视来源",sourceSettings) { login() }
-        button("直播订阅",sourceSettings) { liveSourcesScreen() }
-        button("扫码添加来源",sourceSettings) {
-            dialog=AlertDialog.Builder(this).setTitle("添加哪种来源？").setItems(arrayOf("影视来源","直播订阅")) { _,which ->
-                startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),if(which==0)412 else 413)
-            }.setNegativeButton("取消",null).show()
+        val videoSettings=section("视频源")
+        videoSettings.addView(text("电影、电视剧 · CMS JSON 来源",14f).apply {setTextColor(secondaryColor)})
+        button("影视来源",videoSettings) { login() }
+        button("扫码添加视频源",videoSettings) {
+            startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),412)
+        }
+        val liveSettings=section("直播源")
+        liveSettings.addView(text("电视频道 · M3U 播放列表",14f).apply {setTextColor(secondaryColor)})
+        button("直播订阅",liveSettings) { liveSourcesScreen() }
+        button("扫码添加直播源",liveSettings) {
+            startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),413)
         }
         val homeSettings=section("首页")
         val showRecommendations=CheckBox(this).apply {text="显示推荐片单";setTextColor(Color.WHITE);isChecked=recommendations.enabled();homeSettings.addView(this)}
@@ -512,7 +528,7 @@ class PhoneActivity : Activity() {
     }
     private fun liveSourcesScreen() {
         screen("live-sources","直播订阅")
-        content.addView(text("订阅地址不变，频道会随列表更新。更新失败时保留上一次的频道和收藏。",14f).apply {setTextColor(secondaryColor)})
+        content.addView(text("用于电视频道直播，支持 M3U 订阅地址或文件。影视 CMS JSON 请到视频源添加。更新失败时保留上一次的频道和收藏。",14f).apply {setTextColor(secondaryColor)})
         val imports=section()
         button("添加直播订阅",imports,true) {editLiveSubscription()}
         val row=buttonRow(imports)

@@ -86,7 +86,7 @@ final class LocalRepository {
         else if(root instanceof JSONObject) {
             JSONObject obj=(JSONObject)root;
             list=obj.optJSONArray("sources");
-            if(list==null) {list=obj.optJSONArray("sites");tvbox=true;}
+            if(list==null) {list=obj.optJSONArray("sites");tvbox=list!=null;}
             if(list==null && obj.has("url")) list=new JSONArray().put(obj);
         } else list=null;
         if(list==null) throw new IOException("请填写源 JSON 或订阅地址");
