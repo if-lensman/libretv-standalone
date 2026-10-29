@@ -80,7 +80,7 @@ public final class LiveFlowTest extends TestCase {
             activity=instrument.startActivitySync(new Intent(context,LivePlayerActivity.class).putExtra("channelId",c.getString("id")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             awaitPlaying();boolean[] live={false};instrument.runOnMainSync(()->live[0]=player().isCurrentMediaItemLive());assertTrue("Fixture was not treated as live HLS",live[0]);
             assertEquals(c.getString("id"),new LiveRepository(context).lastChannel());
-            if(i==0){click("回到直播");awaitPlaying();click("下一台");awaitPlaying();assertEquals(repository.channels().getJSONObject(1).getString("id"),new LiveRepository(context).lastChannel());}
+            if(i==0){click("回到直播");awaitPlaying();click("下一个");awaitPlaying();assertEquals(repository.channels().getJSONObject(1).getString("id"),new LiveRepository(context).lastChannel());}
             instrument.runOnMainSync(activity::finish);instrument.waitForIdleSync();activity=null;
         }
         assertEquals(before,context.getSharedPreferences("standalone-playback",0).getAll());

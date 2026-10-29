@@ -43,18 +43,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
    data=('\n'.join(lines)+'\n').encode();self.send_response(200);self.send_header('Content-Type','audio/x-mpegurl');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
   if parsed.path.startswith('/live/header'):
    if self.headers.get('User-Agent')!='FixtureLiveAgent' or self.headers.get('Referer')!='http://10.0.2.2:19001/':self.send_error(403);return
-  if parsed.path in ('/live/stream','/live/header-stream'):
+  if parsed.path in ('/live/stream','/live/header-stream','/live/demo-stream'):
    if LIVE_MODE=='offline':self.send_error(503);return
-   segment_files=sorted((ROOT/'live-media').glob('part*.ts'))
+   segment_files=sorted((ROOT/('demo-live-media' if parsed.path=='/live/demo-stream' else 'live-media')).glob('part*.ts'))
    if not segment_files:self.send_error(503);return
-   sequence=int((time.monotonic()-LIVE_STARTED)//2)+(1000 if LIVE_MODE=='jump' else 0);prefix='/live/header/' if 'header' in parsed.path else '/live/media/'
+   sequence=int((time.monotonic()-LIVE_STARTED)//2)+(1000 if LIVE_MODE=='jump' else 0);prefix='/live/demo-media/' if parsed.path=='/live/demo-stream' else '/live/header/' if 'header' in parsed.path else '/live/media/'
    lines=['#EXTM3U','#EXT-X-VERSION:3','#EXT-X-TARGETDURATION:2','#EXT-X-MEDIA-SEQUENCE:'+str(sequence),'#EXT-X-DISCONTINUITY-SEQUENCE:'+str(sequence//len(segment_files))]
    for i in range(sequence,sequence+4):
     if i>sequence and i%len(segment_files)==0:lines.append('#EXT-X-DISCONTINUITY')
     lines+=['#EXTINF:2.0,',prefix+segment_files[i%len(segment_files)].name+'?seq='+str(i)]
    data=('\n'.join(lines)+'\n').encode();self.send_response(200);self.send_header('Content-Type','application/octet-stream');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
-  if parsed.path.startswith(('/live/media/','/live/header/')):
-   file=ROOT/'live-media'/pathlib.Path(parsed.path).name
+  if parsed.path.startswith(('/live/media/','/live/header/','/live/demo-media/')):
+   file=ROOT/('demo-live-media' if '/demo-media/' in parsed.path else 'live-media')/pathlib.Path(parsed.path).name
    if not file.is_file():self.send_error(404);return
    data=file.read_bytes();self.send_response(200);self.send_header('Content-Type','video/mp2t');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
   if parsed.path=='/bad':self.send_error(503);return

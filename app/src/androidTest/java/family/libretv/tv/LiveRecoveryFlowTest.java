@@ -65,11 +65,11 @@ public final class LiveRecoveryFlowTest extends TestCase {
         click("重试播放");awaitTerminal();assertTrue((Integer)field("ticket")>generation);assertTrue(context.getSharedPreferences("standalone-playback",0).getAll().isEmpty());
     }
     public void testSlowStartupStatusSurvivesHiddenControlsAndManualLineSwitch()throws Exception {
-        launch(playlist("slow"));Thread.sleep(1000);instrument.runOnMainSync(()->((PlayerView)field("video")).hideController());Thread.sleep(3500);
+        launch(playlist("slow"));instrument.runOnMainSync(()->activity.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));Thread.sleep(1000);instrument.runOnMainSync(()->((PlayerView)field("video")).hideController());Thread.sleep(3500);
         assertTrue(((View)field("statusPanel")).isShown());assertFalse(((View)field("chrome")).isShown());capture("live-recovery-connecting.png");click("换线路");awaitPlaying();assertEquals(1,field("lineIndex"));assertFalse(((View)field("statusPanel")).isShown());
     }
     public void testOldSlowChannelCannotReplaceNewChannel()throws Exception {
-        launch(playlist("slow"));Thread.sleep(500);click("下一台");awaitPlaying();String id=repo.channels().getJSONObject(1).getString("id");assertEquals(id,new LiveRepository(context).lastChannel());
+        launch(playlist("slow"));Thread.sleep(500);click("下一个");awaitPlaying();String id=repo.channels().getJSONObject(1).getString("id");assertEquals(id,new LiveRepository(context).lastChannel());
         int generation=(Integer)field("ticket");Thread.sleep(13000);assertEquals(generation,field("ticket"));assertEquals(id,new LiveRepository(context).lastChannel());awaitPlaying();
     }
     public void testLiveWindowJumpReloadsFreshStreamWithoutVodWrites()throws Exception {

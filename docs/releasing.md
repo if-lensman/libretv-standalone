@@ -61,6 +61,6 @@ python3 scripts/sync-gitee-updates.py --directory releases/<version>-public --pu
 
 ## 截图与每版宣传材料
 
-用户于2026-10-28要求每次授权发布时，同步整理抖音文案、配图、原始截图和发布说明至同级NAS仓 `../libretv-nas/promo/releases/<version>/`，不再默认放桌面。公开发布说明不加验证章节；内部worklog仍保存证据。
+用户于2026-10-28要求每次授权发布时，同步整理抖音文案、配图、原始截图和发布说明至同级NAS仓 `../libretv-nas/promo/releases/<version>/`，不再默认放桌面；本地宣传材料只保存文案和图片散文件，不生成素材 ZIP，用户直接用电脑上传。公开发布说明不加验证章节；内部worklog仍保存证据。
 
 截图作为正式Release附件，不混入APK默认源配置。Gitee脚本可重复传 `--attachment releases/<version>-public/<file.png或zip>`；它只接受公开发布目录下显式选定的图片/ZIP，上传正式Release后匿名核验。`--release-notes <body-template.md>` 支持 `{{asset:filename}}`，上传后替换为该平台实际附件地址，避免跨平台图片引用。App更新清单notes继续使用简短纯改动说明。下载分支保持核心APK/清单/校验文件，不新增宣传素材。
