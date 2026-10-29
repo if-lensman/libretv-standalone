@@ -39,7 +39,7 @@ public final class LivePlayerActivity extends Activity {
     private android.app.AlertDialog liveOptions;
     private TextView channelMeta;
     private String pickerGroup="全部";
-    private boolean pickerOpen,controlsShown=true;
+    private boolean pickerOpen,controlsShown=true,silentChannelSwitch;
     private TextView title,statusText;
     private Button lines,retryButton,statusNext,orientationButton;
     private ProgressBar spinner;
@@ -65,7 +65,7 @@ public final class LivePlayerActivity extends Activity {
         if(state!=null&&state.containsKey("windowBrightness")){WindowManager.LayoutParams attrs=getWindow().getAttributes();attrs.screenBrightness=state.getFloat("windowBrightness");getWindow().setAttributes(attrs);}
         stage=new PlaybackGestureLayout(this);stage.setBackgroundColor(0xff0c141d);
         video=(PlayerView)LayoutInflater.from(this).inflate(R.layout.player_live_view,stage,false);
-        video.setControllerShowTimeoutMs(3000);stage.addView(video,new FrameLayout.LayoutParams(-1,-1));
+        video.setControllerShowTimeoutMs(3000);video.setControllerAutoShow(!tvRemote);stage.addView(video,new FrameLayout.LayoutParams(-1,-1));
         headingChrome=new LinearLayout(this);headingChrome.setOrientation(LinearLayout.VERTICAL);headingChrome.setBackgroundResource(R.drawable.player_top);
         LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);headingChrome.addView(heading);
         Button back=PlayerStyle.action(this,"","back",false);back.setContentDescription("返回频道列表");heading.addView(back,new LinearLayout.LayoutParams(dp(42),dp(48)));back.setOnClickListener(v->finish());
@@ -84,7 +84,7 @@ public final class LivePlayerActivity extends Activity {
         channelButton=liveAction(actionRow,"选台","grid",()->showChannelPicker(true));
         liveAction(actionRow,"回到直播","restart",()->beginRound(lineIndex,"正在回到直播位置…",true));
         lines=liveAction(actionRow,"换线路","more",this::manualNextLine);
-        if(tvRemote){TextView hint=new TextView(this);hint.setText("← 上一个频道   ·   → 下一个频道   ·   上下键选台   ·   返回收起");hint.setTextSize(13);hint.setTextColor(PlayerStyle.MUTED);hint.setGravity(Gravity.CENTER);hint.setPadding(0,dp(12),0,0);chrome.addView(hint);}
+        if(tvRemote){TextView hint=new TextView(this);hint.setText("方向键选择 · 确认执行 · 返回收起后，左右键静默切台");hint.setTextSize(13);hint.setTextColor(PlayerStyle.MUTED);hint.setGravity(Gravity.CENTER);hint.setPadding(0,dp(12),0,0);chrome.addView(hint);}
         stage.addView(chrome,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));
         video.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener)v->{controlsShown=v==View.VISIBLE;updateLiveVisibility();});
         ViewCompat.setOnApplyWindowInsetsListener(stage,(v,insets)->{androidx.core.graphics.Insets b=insets.getInsets(WindowInsetsCompat.Type.systemBars()|WindowInsetsCompat.Type.displayCutout());
@@ -120,6 +120,7 @@ public final class LivePlayerActivity extends Activity {
         Button b=tvRemote?PlayerStyle.tvAction(this,text,icon):PlayerStyle.action(this,text,icon,false);
         if(!tvRemote){b.setTextSize(11);b.setPadding(dp(2),dp(4),dp(2),dp(4));}
         cell.addView(b,new LinearLayout.LayoutParams(tvRemote?-2:-1,dp(tvRemote?50:58)));b.setOnClickListener(v->action.run());
+        if(tvRemote)b.setOnFocusChangeListener((v,focused)->{if(focused&&!pickerOpen)video.showController();});
         if(tvRemote){String key="key-left".equals(icon)?"方向键左":"key-right".equals(icon)?"方向键右":"";TextView hint=new TextView(this);hint.setText(key);hint.setTextColor(PlayerStyle.MUTED);hint.setTextSize(13);hint.setGravity(Gravity.CENTER);cell.addView(hint,new LinearLayout.LayoutParams(-1,dp(23)));}
         return b;
     }
@@ -168,7 +169,7 @@ public final class LivePlayerActivity extends Activity {
         Button current=null,first=null;
         ArrayList<Button> tiles=new ArrayList<>();
         for(int target:visible){JSONObject c=channels.optJSONObject(target);Button tile=PlayerStyle.action(this,c.optString("name"),"",false);tile.setId(View.generateViewId());tile.setCompoundDrawables(null,null,null,null);tile.setTextSize(tvRemote?18:13);tile.setMaxLines(2);tile.setPadding(dp(7),dp(4),dp(7),dp(4));tile.setSelected(target==index);tile.setBackground(tvRemote?PlayerStyle.tvTileBackground(this):PlayerStyle.background(this,true));tile.setContentDescription("播放频道 · "+c.optString("name"));GridLayout.LayoutParams p=new GridLayout.LayoutParams();p.width=(panelWidth-dp(32))/2-dp(8);p.height=dp(tvRemote?58:50);p.setMargins(dp(4),dp(4),dp(4),dp(4));grid.addView(tile,p);tiles.add(tile);if(first==null)first=tile;if(target==index)current=tile;
-            tile.setOnClickListener(v->{if(target!=index){index=target;try{beginRound(repository.preferredLine(channel(),System.currentTimeMillis()),"正在切换频道…",true);}catch(Exception e){showStatus("频道资料无效，请更新列表",false,true);}}if(phonePortrait())showChannelPicker(false);else closeChannelPicker();});}
+            tile.setOnClickListener(v->{silentChannelSwitch=false;if(target!=index){index=target;try{beginRound(repository.preferredLine(channel(),System.currentTimeMillis()),"正在切换频道…",true);}catch(Exception e){showStatus("频道资料无效，请更新列表",false,true);}}if(phonePortrait())showChannelPicker(false);else closeChannelPicker();});}
         for(int i=0;i<tiles.size();i++){Button b=tiles.get(i);b.setNextFocusLeftId(tiles.get(i%2==0?i:i-1).getId());b.setNextFocusRightId(tiles.get(i%2==1||i+1==tiles.size()?i:i+1).getId());}
         if(visible.isEmpty()){TextView empty=new TextView(this);empty.setText("收藏".equals(pickerGroup)?"还没有收藏频道":"暂无频道");empty.setTextColor(PlayerStyle.MUTED);grid.addView(empty);}
         if(!phonePortrait()){
@@ -182,7 +183,7 @@ public final class LivePlayerActivity extends Activity {
     private void closeChannelPicker(){
         if(phonePortrait())return;
         pickerOpen=false;video.setFocusable(true);if(channelPanel!=null){stage.removeView(channelPanel);channelPanel=null;}
-        video.showController();controlsShown=true;updateLiveVisibility();if(player!=null)stage.bind(player,video,chrome,headingChrome,statusPanel);if(tvRemote)video.requestFocus();
+        video.showController();controlsShown=true;updateLiveVisibility();if(player!=null)stage.bind(player,video,chrome,headingChrome,statusPanel);if(tvRemote)channelButton.requestFocus();
     }
     private void showLiveOptions(){
         liveOptions=new android.app.AlertDialog.Builder(this).setTitle("直播操作").setItems(new String[]{"换线路","回到直播","返回频道列表"},(d,which)->{if(which==0)manualNextLine();else if(which==1)beginRound(lineIndex,"正在回到直播位置…",true);else finish();}).setNegativeButton("关闭",null).show();
@@ -221,8 +222,10 @@ public final class LivePlayerActivity extends Activity {
         catch(Exception e){showStatus("频道资料无效，请返回更新列表",false,false);}
         main.post(watchdog);
     }
-    private void switchChannel(int delta){
+    private void switchChannel(int delta){switchChannel(delta,false);}
+    private void switchChannel(int delta,boolean silent){
         if(channels.length()==0)return;
+        silentChannelSwitch=silent;
         List<Integer> visible=visibleChannels();if(visible.isEmpty())return;int current=visible.indexOf(index);index=visible.get(current<0?(delta<0?visible.size()-1:0):(current+delta+visible.size())%visible.size());
         try{beginRound(repository.preferredLine(channel(),System.currentTimeMillis()),"正在切换频道…",true);}catch(Exception e){showStatus("频道资料无效，请更新列表",false,true);}
         if(phonePortrait())showChannelPicker(false);
@@ -242,10 +245,11 @@ public final class LivePlayerActivity extends Activity {
         try{
             JSONObject selected=channel(),line=selected.getJSONArray("lines").getJSONObject(lineIndex);
             repository.remember(selected.getString("id"));updateChannelHeading();
-            lines.setEnabled(lineCount()>1);lines.setText(lineCount()>1?label():"单线路");showStatus(message+"\n"+label(),true,false);video.showController();
+            lines.setEnabled(lineCount()>1);lines.setText(lineCount()>1?label():"单线路");showStatus(message+"\n"+label(),true,false);
             DefaultLoadControl load=new DefaultLoadControl.Builder().setBufferDurationsMs(10000,25000,1500,4000).build();
             player=new ExoPlayer.Builder(this).setLoadControl(load).build();ExoPlayer opened=player;
             video.setPlayer(opened);stage.bind(opened,video,chrome,headingChrome,statusPanel,channelPanel);video.setKeepScreenOn(true);opened.setPlaybackSpeed(1f);opened.setPlayWhenReady(resume);
+            if(tvRemote&&silentChannelSwitch)video.hideController();else video.showController();
             updatePlayButton();
             opened.addListener(new Player.Listener(){
                 @Override public void onPlayWhenReadyChanged(boolean play,int reason){updatePlayButton();}
@@ -332,14 +336,24 @@ public final class LivePlayerActivity extends Activity {
         }
         return new Reason("频道连接中断",false,false);
     }
+    private void showLiveControls(){
+        silentChannelSwitch=false;video.showController();controlsShown=true;updateLiveVisibility();playButton.requestFocus();
+    }
     @Override public boolean dispatchKeyEvent(KeyEvent event){
         int code=event.getKeyCode();
         if(tvRemote&&!pickerOpen){
-            if(code==KeyEvent.KEYCODE_DPAD_LEFT||code==KeyEvent.KEYCODE_DPAD_RIGHT){
-                if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0&&!event.isCanceled())switchChannel(code==KeyEvent.KEYCODE_DPAD_LEFT?-1:1);return true;
+            boolean horizontal=code==KeyEvent.KEYCODE_DPAD_LEFT||code==KeyEvent.KEYCODE_DPAD_RIGHT;
+            boolean direction=horizontal||code==KeyEvent.KEYCODE_DPAD_UP||code==KeyEvent.KEYCODE_DPAD_DOWN;
+            // Only hidden controls permit one direct channel change per press.
+            if(!controlsShown&&horizontal){
+                if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0&&!event.isCanceled())switchChannel(code==KeyEvent.KEYCODE_DPAD_LEFT?-1:1,true);return true;
             }
-            if(code==KeyEvent.KEYCODE_DPAD_UP||code==KeyEvent.KEYCODE_DPAD_DOWN||code==KeyEvent.KEYCODE_MENU){if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0)showChannelPicker(true);return true;}
-            if((code==KeyEvent.KEYCODE_DPAD_CENTER||code==KeyEvent.KEYCODE_ENTER)&&!(getCurrentFocus() instanceof Button)){if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0){if(controlsShown){if(player!=null){if(player.getPlayWhenReady())player.pause();else player.play();updatePlayButton();}}else video.showController();}return true;}
+            if((direction&&(!controlsShown||!(getCurrentFocus() instanceof Button)))||code==KeyEvent.KEYCODE_MENU){
+                if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0)showLiveControls();return true;
+            }
+            if((code==KeyEvent.KEYCODE_DPAD_CENTER||code==KeyEvent.KEYCODE_ENTER)&&!(getCurrentFocus() instanceof Button)){
+                if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0)showLiveControls();return true;
+            }
         }
         return super.dispatchKeyEvent(event);
     }

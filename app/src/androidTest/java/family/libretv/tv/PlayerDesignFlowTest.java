@@ -101,15 +101,22 @@ public final class PlayerDesignFlowTest extends TestCase {
         click("更多");chooseDialog("dialog",0);assertTrue("Restart did not seek to start",position()<1500);instrument.runOnMainSync(()->player().pause());
         click("更多");chooseDialog("dialog",1);assertTrue(context.getSharedPreferences("standalone-player",0).getBoolean("autoNext",false));
     }
-    public void testTvFocusRemoteSeekAndScreenshot() throws Exception {
+    public void testTvDirectionsWakeControlsWithoutSeekingAndScreenshot() throws Exception {
+        instrument.setInTouchMode(false);
         activity=instrument.startActivitySync(new Intent(context,MainActivity.class).putExtra("tvDestination","search").addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
         JSONObject source=source(),item=item();JSONArray episodes=new JSONArray();for(int i=0;i<24;i++)episodes.put(ROOT+"/demo.mp4");
         instrument.runOnMainSync(()->{set("title","山海之间");set("detailSource",source);set("selected",item);set("episodes",episodes);set("episodeIndex",2);try{set("playbackUri",new java.net.URI(ROOT+"/demo.mp4"));}catch(Exception e){throw new RuntimeException(e);}set("position",0L);set("playWhenReady",true);invoke("showPlayer",new Class<?>[]{});});ready();at(20000);
         Thread.sleep(400);instrument.waitForIdleSync();
         long focusDeadline=SystemClock.uptimeMillis()+5000;while(!activity.hasWindowFocus()&&SystemClock.uptimeMillis()<focusDeadline)Thread.sleep(50);
-        instrument.runOnMainSync(()->{assertTrue("TV window not focused",activity.hasWindowFocus());invoke("hideControls",new Class<?>[]{});});
-        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);awaitPosition(30000);instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);awaitPosition(20000);
-        instrument.runOnMainSync(()->invoke("showControls",new Class<?>[]{boolean.class},true));
+        instrument.runOnMainSync(()->{assertTrue("TV window not focused",activity.hasWindowFocus());assertFalse("TV remote tests require non-touch input mode",activity.getWindow().getDecorView().isInTouchMode());invoke("hideControls",new Class<?>[]{});});
+        instrument.getUiAutomation().waitForIdle(300,3000);Thread.sleep(400);
+        for(int direction:new int[]{KeyEvent.KEYCODE_DPAD_LEFT,KeyEvent.KEYCODE_DPAD_RIGHT,KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN}){
+            instrument.runOnMainSync(()->invoke("hideControls",new Class<?>[]{}));
+            instrument.waitForIdleSync();Thread.sleep(150);
+            instrument.sendKeyDownUpSync(direction);instrument.waitForIdleSync();Thread.sleep(100);
+            instrument.runOnMainSync(()->{assertTrue("Direction "+direction+" did not wake controls; focus="+activity.getCurrentFocus()+" window="+activity.hasWindowFocus(),(Boolean)field("controlsVisible"));assertEquals(field("playToggle"),activity.getCurrentFocus());});
+            awaitPosition(20000);
+        }
         View[] focus={null};instrument.runOnMainSync(()->focus[0]=activity.getCurrentFocus());assertEquals(field("playToggle"),focus[0]);
         capture("player-tv-controls.png");
         instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);instrument.waitForIdleSync();instrument.runOnMainSync(()->focus[0]=activity.getCurrentFocus());assertTrue(focus[0] instanceof Button);assertEquals("上一集",((Button)focus[0]).getText().toString());

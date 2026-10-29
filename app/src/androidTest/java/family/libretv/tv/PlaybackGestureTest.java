@@ -169,7 +169,7 @@ public final class PlaybackGestureTest extends TestCase {
     public void testTvLiveHasNoRotationControlAndRightStillChangesChannel()throws Exception {
         LiveRepository repo=new LiveRepository(context);repo.importPlaylist("TV rotation guard",LocalRepository.fetch(ROOT+"/live/list"));assertTrue("Fixture needs multiple channels",repo.channels().length()>1);String id=repo.channels().getJSONObject(0).getString("id");
         activity=instrument.startActivitySync(new Intent(context,LivePlayerActivity.class).putExtra("channelId",id).putExtra("tvRemote",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));ready();
-        int[] before={0};instrument.runOnMainSync(()->{assertNull(field("orientationButton"));before[0]=(Integer)field("index");});
+        int[] before={0};instrument.runOnMainSync(()->{assertNull(field("orientationButton"));before[0]=(Integer)field("index");video().hideController();});
         long focusUntil=SystemClock.uptimeMillis()+3000;while(!activity.hasWindowFocus()&&SystemClock.uptimeMillis()<focusUntil)Thread.sleep(50);
         instrument.runOnMainSync(()->{activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_RIGHT));activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_RIGHT));});
         long changedUntil=SystemClock.uptimeMillis()+3000;boolean[] changed={false};while(SystemClock.uptimeMillis()<changedUntil){instrument.runOnMainSync(()->changed[0]=before[0]!=(Integer)field("index"));if(changed[0])break;Thread.sleep(50);}

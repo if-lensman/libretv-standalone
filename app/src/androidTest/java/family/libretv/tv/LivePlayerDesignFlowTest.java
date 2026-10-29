@@ -38,6 +38,7 @@ public final class LivePlayerDesignFlowTest extends TestCase {
     private Object field(String name){try{java.lang.reflect.Field f=LivePlayerActivity.class.getDeclaredField(name);f.setAccessible(true);return f.get(activity);}catch(Exception e){throw new RuntimeException(e);}}
     private ExoPlayer player(){return (ExoPlayer)field("player");}
     private void launch(boolean tv)throws Exception {
+        if(tv)instrument.setInTouchMode(false);
         activity=instrument.startActivitySync(new Intent(context,LivePlayerActivity.class).putExtra("channelId",repo.channels().getJSONObject(0).getString("id")).putExtra("tvRemote",tv).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
         ready();long end=SystemClock.uptimeMillis()+5000;while(!activity.hasWindowFocus()&&SystemClock.uptimeMillis()<end)Thread.sleep(50);assertTrue(activity.hasWindowFocus());
         // Cold emulator activity transitions may retain input while the first HLS frame is already decoded.
@@ -71,16 +72,29 @@ public final class LivePlayerDesignFlowTest extends TestCase {
     }
     public void testTvCategoriesDirectionKeysAndScreenshots()throws Exception {
         launch(true);assertNull(field("orientationButton"));
-        instrument.runOnMainSync(()->assertEquals("TV opens with focus on the video surface",field("video"),activity.getCurrentFocus()));
-        key(KeyEvent.KEYCODE_DPAD_RIGHT);awaitIndex(1);ready();
+        instrument.runOnMainSync(()->((PlayerView)field("video")).hideController());
+        key(KeyEvent.KEYCODE_DPAD_RIGHT);awaitIndex(1);ready();Thread.sleep(400);
+        instrument.runOnMainSync(()->assertFalse("Silent switch must leave controls hidden",(Boolean)field("controlsShown")));
         key(KeyEvent.KEYCODE_DPAD_LEFT);awaitIndex(0);ready();
-        controls();instrument.runOnMainSync(()->((View)field("previousChannel")).requestFocus());capture("live-tv-player.png");key(KeyEvent.KEYCODE_DPAD_UP);assertTrue((Boolean)field("pickerOpen"));
+        for(int direction:new int[]{KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN}){
+            instrument.runOnMainSync(()->((PlayerView)field("video")).hideController());key(direction);
+            instrument.runOnMainSync(()->{assertTrue((Boolean)field("controlsShown"));assertEquals(field("playButton"),activity.getCurrentFocus());});
+        }
+        key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        instrument.runOnMainSync(()->{assertEquals(field("previousChannel"),activity.getCurrentFocus());assertEquals(0,field("index"));});
+        key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        instrument.runOnMainSync(()->{assertEquals(field("nextChannel"),activity.getCurrentFocus());assertEquals(0,field("index"));});
+        key(KeyEvent.KEYCODE_DPAD_CENTER);awaitIndex(1);ready();
+        controls();instrument.runOnMainSync(()->((View)field("previousChannel")).requestFocus());capture("live-tv-player.png");
+        remote(find("选台",false));assertTrue((Boolean)field("pickerOpen"));
         int current=(Integer)field("index");key(KeyEvent.KEYCODE_DPAD_RIGHT);assertEquals("Navigation inside picker must not change channel",current,field("index"));
         remote(find("频道分类 · 纪实",true));assertEquals("纪实",field("pickerGroup"));find("纪实 · 4 个频道",false);
         remote(find("播放频道 · 纪实2台",true));awaitIndex(5);ready();assertFalse((Boolean)field("pickerOpen"));
-        key(KeyEvent.KEYCODE_DPAD_UP);key(KeyEvent.KEYCODE_DPAD_DOWN);capture("live-tv-categories.png");key(KeyEvent.KEYCODE_BACK);
+        remote(find("选台",false));key(KeyEvent.KEYCODE_DPAD_DOWN);capture("live-tv-categories.png");key(KeyEvent.KEYCODE_BACK);
+        instrument.runOnMainSync(()->assertEquals(field("channelButton"),activity.getCurrentFocus()));
+        instrument.runOnMainSync(()->((PlayerView)field("video")).hideController());
         key(KeyEvent.KEYCODE_DPAD_RIGHT);awaitIndex(6);ready();key(KeyEvent.KEYCODE_DPAD_RIGHT);awaitIndex(7);ready();key(KeyEvent.KEYCODE_DPAD_RIGHT);awaitIndex(4);ready();
-        key(KeyEvent.KEYCODE_DPAD_DOWN);key(KeyEvent.KEYCODE_BACK);assertFalse((Boolean)field("pickerOpen"));assertFalse(activity.isFinishing());
+        key(KeyEvent.KEYCODE_DPAD_DOWN);assertFalse((Boolean)field("pickerOpen"));key(KeyEvent.KEYCODE_BACK);assertFalse(activity.isFinishing());
         assertTrue(context.getSharedPreferences("standalone-playback",0).getAll().isEmpty());
     }
 }

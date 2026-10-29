@@ -794,15 +794,14 @@ public final class MainActivity extends Activity {
         autoNext=new CheckBox(this);autoNext.setText("自动下一集");autoNext.setTextColor(Color.WHITE);
         autoNext.setChecked(getPreferences(MODE_PRIVATE).getBoolean("autoNext",true));
         autoNext.setOnCheckedChangeListener((v,on)->getPreferences(MODE_PRIVATE).edit().putBoolean("autoNext",on).apply());
-        TextView hint=label("左右快进退 · 确认暂停 · 返回收起",14);hint.setTextColor(PlayerStyle.MUTED);hint.setGravity(Gravity.CENTER);hint.setPadding(0,dp(14),0,0);playerControls.addView(hint);
+        TextView hint=label("方向键选择 · 确认执行 · 返回收起",14);hint.setTextColor(PlayerStyle.MUTED);hint.setGravity(Gravity.CENTER);hint.setPadding(0,dp(14),0,0);playerControls.addView(hint);
         stage.addView(playerControls, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
         setContentView(stage); controlsVisible = true;
         playerView.setOnClickListener(v -> { if (controlsVisible) hideControls(); else showControls(true); });
         playerView.setOnKeyListener((v, key, event) -> {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (key == KeyEvent.KEYCODE_DPAD_CENTER || key == KeyEvent.KEYCODE_ENTER) { togglePlay(); showControls(false); return true; }
-            if (key == KeyEvent.KEYCODE_DPAD_LEFT) { seek(-10000); showControls(false); return true; }
-            if (key == KeyEvent.KEYCODE_DPAD_RIGHT) { seek(10000); showControls(false); return true; }
+            if (key == KeyEvent.KEYCODE_DPAD_LEFT || key == KeyEvent.KEYCODE_DPAD_RIGHT || key == KeyEvent.KEYCODE_DPAD_UP || key == KeyEvent.KEYCODE_DPAD_DOWN) { showControls(true); return true; }
             return false;
         });
         playerView.requestFocus();
@@ -871,7 +870,7 @@ public final class MainActivity extends Activity {
                 playbackStatus.setText("播放已停止"); showControls(true); main.removeCallbacks(hidePlayerControls);
             }
             @Override public void onRenderedFirstFrame() {
-                playerHasFrame = true; setNotice("左右快进退 · 上下键打开菜单 · 返回关闭菜单 / 选集"); showControls(false);
+                playerHasFrame = true; setNotice("方向键唤出操作 · 确认执行 · 返回收起 / 选集"); showControls(false);
             }
             @Override public void onIsPlayingChanged(boolean playing) {
                 if (playing) { main.removeCallbacks(hidePlayerControls); main.postDelayed(hidePlayerControls, 3500); }
@@ -917,12 +916,14 @@ public final class MainActivity extends Activity {
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (screen == Screen.PLAYER && player != null && event.getAction() == KeyEvent.ACTION_DOWN) {
             if (controlsVisible) { main.removeCallbacks(hidePlayerControls); main.postDelayed(hidePlayerControls, 3500); }
-            if(!controlsVisible&&(event.getKeyCode()==KeyEvent.KEYCODE_DPAD_LEFT||event.getKeyCode()==KeyEvent.KEYCODE_DPAD_RIGHT)){
-                seek(event.getKeyCode()==KeyEvent.KEYCODE_DPAD_LEFT?-10000:10000);showControls(false);playerView.requestFocus();return true;
+            int key=event.getKeyCode();
+            boolean direction=key==KeyEvent.KEYCODE_DPAD_LEFT||key==KeyEvent.KEYCODE_DPAD_RIGHT||key==KeyEvent.KEYCODE_DPAD_UP||key==KeyEvent.KEYCODE_DPAD_DOWN;
+            if(direction && (!controlsVisible || !(getCurrentFocus() instanceof Button))) {
+                showControls(true);return true;
             }
-            if (event.getKeyCode() == KeyEvent.KEYCODE_MENU
-                    || !controlsVisible && (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP || event.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN)) {
-                showControls(true); return true;
+            if(key==KeyEvent.KEYCODE_MENU){showControls(true);return true;}
+            if((key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER)&&(!controlsVisible||getCurrentFocus()==playerView)){
+                if(event.getRepeatCount()==0)togglePlay();showControls(true);return true;
             }
             if (event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) { togglePlay(); showControls(false); return true; }
             if (event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PLAY) { player.play(); return true; }
