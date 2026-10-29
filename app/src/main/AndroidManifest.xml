@@ -8,7 +8,7 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <application tools:replace="android:allowBackup" android:theme="@style/AppTheme" android:label="片刻"
-        android:icon="@drawable/banner" android:banner="@drawable/banner"
+        android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:banner="@drawable/pianke_tv_banner"
         android:usesCleartextTraffic="true" android:allowBackup="false" android:supportsRtl="true">
         <receiver android:name=".UpdateInstallReceiver" android:exported="false" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true">

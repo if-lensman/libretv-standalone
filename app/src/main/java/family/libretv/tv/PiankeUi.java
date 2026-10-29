@@ -24,7 +24,7 @@ final class PiankeUi {
         states.addState(new int[]{},surface(c,primary?PINK:PANEL,12));return states;
     }
     static TextView text(Context c,String value,int size,boolean bold){TextView t=new TextView(c);t.setText(value);t.setTextSize(size);t.setTextColor(bold?0xfff1f5fa:SECONDARY);if(bold)t.setTypeface(null,Typeface.BOLD);return t;}
-    static ImageView brand(Context c,int width,int height){ImageView v=new ImageView(c);v.setImageResource(R.drawable.pianke_wordmark);v.setScaleType(ImageView.ScaleType.FIT_CENTER);v.setContentDescription("片刻");v.setLayoutParams(new LinearLayout.LayoutParams(dp(c,width),dp(c,height)));return v;}
+    static ImageView brand(Context c,int width,int height){ImageView v=new ImageView(c);v.setImageResource(R.drawable.pianke_art);v.setScaleType(ImageView.ScaleType.FIT_CENTER);v.setContentDescription("片刻");v.setBackground(surface(c,BACKGROUND,12));v.setClipToOutline(true);v.setLayoutParams(new LinearLayout.LayoutParams(dp(c,Math.min(width,height)),dp(c,Math.min(width,height))));return v;}
     static void progress(LinearLayout parent,JSONObject saved){
         if(saved==null||saved.optLong("duration")<=0)return;
         Context c=parent.getContext();ProgressBar bar=new ProgressBar(c,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(1000);
@@ -42,12 +42,12 @@ final class PiankeUi {
         android.text.SpannableString styled=new android.text.SpannableString(b.getText());
         int split=b.getText().toString().indexOf('\n');if(split>=0){styled.setSpan(new android.text.style.RelativeSizeSpan(0.80f),split+1,styled.length(),0);styled.setSpan(new android.text.style.ForegroundColorSpan(SECONDARY),split+1,styled.length(),0);}b.setText(styled);
         b.setTextSize(c.getResources().getConfiguration().screenWidthDp>=900?20:16);b.setTextColor(0xffedf2f8);b.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);b.setPadding(dp(c,16),dp(c,12),dp(c,16),dp(c,12));
-        int icon=title.contains("来源")?R.drawable.ic_setting_sources:title.contains("直播")?R.drawable.ic_nav_live:title.contains("投屏")?R.drawable.ic_setting_cast:title.contains("更新")?R.drawable.ic_setting_update:R.drawable.ic_setting_info;
+        int icon=title.startsWith("关于片刻")?R.drawable.pianke_art:title.contains("来源")?R.drawable.ic_setting_sources:title.contains("直播")?R.drawable.ic_nav_live:title.contains("投屏")?R.drawable.ic_setting_cast:title.contains("更新")?R.drawable.ic_setting_update:R.drawable.ic_setting_info;
         android.graphics.drawable.Drawable glyph=c.getDrawable(icon);if(glyph!=null){glyph.setBounds(0,0,dp(c,24),dp(c,24));b.setCompoundDrawables(glyph,null,null,null);b.setCompoundDrawablePadding(dp(c,12));}
         b.setBackground(focus(c,false));b.setFocusableInTouchMode(true);b.setMinHeight(dp(c,58));
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=dp(c,4);p.bottomMargin=dp(c,4);parent.addView(b,p);b.setOnClickListener(v->action.run());return b;
     }
-    static void about(Context c){new android.app.AlertDialog.Builder(c).setTitle("关于片刻").setMessage(SLOGAN+"\n\n版本 "+BuildConfig.VERSION_NAME+"\n手机与电视上的原生影音客户端。\n\n部分业务设计与解析逻辑参考 LibreTV，非官方发行版。项目沿用 AGPL-3.0-or-later；UPnPCast 使用 MIT 许可。完整许可与第三方声明见原仓库 README / NOTICE；仓库地址保持不变。")
+    static void about(Context c){new android.app.AlertDialog.Builder(c).setTitle("关于片刻").setIcon(R.drawable.pianke_art).setMessage(SLOGAN+"\n\n版本 "+BuildConfig.VERSION_NAME+"\n手机与电视上的原生影音客户端。\n\n部分业务设计与解析逻辑参考 LibreTV，非官方发行版。项目沿用 AGPL-3.0-or-later；UPnPCast 使用 MIT 许可。完整许可与第三方声明见原仓库 README / NOTICE；仓库地址保持不变。")
         .setPositiveButton("知道了",null).show();}
     private PiankeUi(){}
 }

@@ -146,7 +146,7 @@ public final class MainActivity extends Activity {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(40), dp(18), dp(40), dp(18)); root.setBackgroundColor(PiankeUi.BACKGROUND);
         LinearLayout navigation=row();navigation.setGravity(Gravity.CENTER_VERTICAL);root.addView(navigation);
-        navigation.addView(PiankeUi.brand(this,96,50));
+        navigation.addView(PiankeUi.brand(this,48,48));
         button(navigation,"首页",()->{startActivity(new Intent(this,TvHomeActivity.class));finish();});
         button(navigation,"搜索",this::showSearch);
         button(navigation,"直播",()->startActivity(new Intent(this,LiveBrowseActivity.class)));
@@ -441,7 +441,7 @@ public final class MainActivity extends Activity {
             RecommendationRepository recommendations=new RecommendationRepository(this);Switch enabled=new Switch(this);enabled.setText("首页推荐");enabled.setTextSize(19);enabled.setTextColor(Color.WHITE);enabled.setPadding(dp(16),dp(16),dp(16),dp(16));enabled.setChecked(recommendations.enabled());panel.addView(enabled);enabled.setOnCheckedChangeListener((v,on)->recommendations.setEnabled(on));
             panel.addView(label("方向键选择，确认执行。播放页隐藏控制时，按方向键唤出操作；直播左右键静默切台。",16));
         }else{
-            panel.addView(PiankeUi.brand(this,144,76));panel.addView(label(PiankeUi.SLOGAN,17));
+            panel.addView(PiankeUi.brand(this,96,96));panel.addView(label(PiankeUi.SLOGAN,17));
             PiankeUi.entry(panel,"检查更新",BuildConfig.VERSION_NAME,()->startActivity(new Intent(this,UpdateActivity.class)));
             PiankeUi.entry(panel,"关于片刻","原生影音客户端",()->PiankeUi.about(this));
         }

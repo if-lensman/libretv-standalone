@@ -48,7 +48,7 @@ public final class TvHomeActivity extends Activity {
     private void render(){
         if(dead)return;int ticket=++generation;if(pending!=null)pending.cancel(true);String restore=focusKey;restoring=true;targets.clear();recent=history.all().optJSONObject(0);items=recommendations.cached(category);
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(0xff101723);root.setPadding(dp(30),dp(16),dp(30),dp(12));
-        LinearLayout header=row(root);header.setGravity(Gravity.CENTER_VERTICAL);ImageView brand=PiankeUi.brand(this,100,52);header.addView(brand);
+        LinearLayout header=row(root);header.setGravity(Gravity.CENTER_VERTICAL);ImageView brand=PiankeUi.brand(this,48,48);header.addView(brand);
         button(header,"首页","nav-home",()->{page="home";focusKey="hero";render();});button(header,"搜索","nav-search",()->open("search"));button(header,"直播","nav-live",()->startActivity(new Intent(this,LiveBrowseActivity.class)));button(header,"收藏","nav-favorites",()->open("favorites"));button(header,"历史","nav-history",()->{page="history";focusKey="history-0";render();});button(header,"设置","nav-settings",()->open("settings"));
         View active=targets.get(page.equals("history")?"nav-history":"nav-home");if(active!=null)active.setBackground(PiankeUi.focus(this,true));
         TextView time=text(new java.text.SimpleDateFormat("HH:mm",Locale.getDefault()).format(new Date()),15,0xffa9b8c9);time.setGravity(Gravity.END);header.addView(time,new LinearLayout.LayoutParams(0,-2,1));

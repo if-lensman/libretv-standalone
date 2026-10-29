@@ -102,6 +102,7 @@ public final class MinimumApiCompatibilityTest extends TestCase {
     public void testPhoneEntryAndDlnaInitialization()throws Exception {
         context.getSharedPreferences("recommendations",0).edit().putBoolean("enabled",false).commit();
         launch(PhoneActivity.class,new Intent());assertFalse(activity.isFinishing());
+        android.graphics.drawable.Drawable icon=context.getPackageManager().getApplicationIcon(context.getPackageName());assertTrue("Launcher icon failed to resolve on minimum Android",icon.getIntrinsicWidth()>0);
         com.yinnho.upnpcast.DLNACast.INSTANCE.init(context);try{assertNotNull(com.yinnho.upnpcast.DLNACast.INSTANCE.getState());}finally{com.yinnho.upnpcast.DLNACast.INSTANCE.cleanup();}
     }
 }

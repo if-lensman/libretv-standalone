@@ -50,7 +50,7 @@ public final class UpdateActivity extends Activity {
         int pad=PiankeUi.dp(this,24);content.setPadding(pad,pad,pad,pad);scroll.addView(content);setContentView(scroll);
         button(content,"‹ 返回",this::finish);
         LinearLayout identity=new LinearLayout(this);identity.setOrientation(LinearLayout.VERTICAL);identity.setGravity(android.view.Gravity.CENTER);identity.setPadding(0,pad,0,pad);content.addView(identity);
-        identity.addView(PiankeUi.brand(this,180,102));
+        identity.addView(PiankeUi.brand(this,120,120));
         TextView slogan=PiankeUi.text(this,PiankeUi.SLOGAN,17,false);slogan.setPadding(0,0,0,pad/2);identity.addView(slogan);
         identity.addView(PiankeUi.text(this,"当前版本 "+BuildConfig.VERSION_NAME,15,false));
         status=PiankeUi.text(this,"",15,false);status.setPadding(0,pad/2,0,pad/2);status.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);content.addView(status);
@@ -58,7 +58,7 @@ public final class UpdateActivity extends Activity {
         install=button(content,"安装已下载更新",this::installPending);install.setVisibility(android.view.View.GONE);
         TextView hint=PiankeUi.text(this,"更新后保留来源与观看记录。",14,false);hint.setPadding(0,pad/2,0,pad/2);content.addView(hint);
         routeButton=button(content,"",this::chooseRoute);updateRouteLabel();configureUpdater();
-        button(content,"关于片刻",()->PiankeUi.about(this));check.requestFocus();
+        Button about=button(content,"关于片刻",()->PiankeUi.about(this));android.graphics.drawable.Drawable icon=getDrawable(R.drawable.pianke_art);icon.setBounds(0,0,PiankeUi.dp(this,28),PiankeUi.dp(this,28));about.setCompoundDrawables(icon,null,null,null);about.setCompoundDrawablePadding(PiankeUi.dp(this,12));check.requestFocus();
         if(restorePending()) {
             if(getPreferences(0).getBoolean("awaitingPermission",false) && (Build.VERSION.SDK_INT<26 || getPackageManager().canRequestPackageInstalls()))installPending();
         } else checkUpdate();

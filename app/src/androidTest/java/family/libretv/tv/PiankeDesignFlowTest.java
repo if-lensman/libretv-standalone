@@ -66,7 +66,7 @@ public final class PiankeDesignFlowTest extends TestCase {
         fill("源名称","手动演示");fill("来源地址","");click("添加来源");await("源地址必须是有效 HTTP(S) 地址");assertEquals(1,new LocalRepository(context).sources().length());
         fill("来源地址",ROOT+"/cms");click("添加来源");await("来源已添加");assertEquals(2,new LocalRepository(context).sources().length());capture("pianke-phone-sources.png");
         click("设置");click("直播订阅");await("导入 M3U 文件");assertFalse(has("手动添加来源"));capture("pianke-phone-live-sources.png");
-        click("设置");click("关于片刻");instrument.waitForIdleSync();assertFalse(instrument.getUiAutomation().getRootInActiveWindow().findAccessibilityNodeInfosByText(PiankeUi.SLOGAN).isEmpty());
+        click("设置");click("关于片刻");instrument.waitForIdleSync();assertFalse(instrument.getUiAutomation().getRootInActiveWindow().findAccessibilityNodeInfosByText(PiankeUi.SLOGAN).isEmpty());capture("pianke-phone-about-dialog.png");
     }
     public void testTvHistoryAndLibraryNavigation()throws Exception{
         instrument.setInTouchMode(false);launch(TvHomeActivity.class,null);
@@ -80,6 +80,7 @@ public final class PiankeDesignFlowTest extends TestCase {
         click("‹ 返回设置");click("播放与显示");assertTrue(views().stream().anyMatch(v->v instanceof Switch));click("应用");await(PiankeUi.SLOGAN);capture("pianke-tv-about.png");
     }
     public void testUpdateWordmarkAndSlogan()throws Exception{
+        launch(PhoneActivity.class,null);capture("pianke-phone-home-icon.png");
         launch(UpdateActivity.class,null);await(PiankeUi.SLOGAN);
         assertTrue(views().stream().anyMatch(v->v instanceof ImageView&&"片刻".contentEquals(String.valueOf(v.getContentDescription()))));
         assertTrue(has("当前版本"));assertTrue(has("更新通道"));capture("pianke-phone-update.png");

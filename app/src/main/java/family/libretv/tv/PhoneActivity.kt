@@ -140,7 +140,7 @@ class PhoneActivity : Activity() {
             v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom)); navigation.visibility=if(insets.isVisible(WindowInsetsCompat.Type.ime())) View.GONE else View.VISIBLE; insets
         }
         ViewCompat.requestApplyInsets(root)
-        if(name == "home") content.addView(PiankeUi.brand(this,124,64))
+        if(name == "home") content.addView(PiankeUi.brand(this,64,64))
         else content.addView(text(heading, 25f).apply { setTypeface(typeface, Typeface.BOLD) })
         notice = text("", 14f).apply {
             setTextColor(accentColor); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
