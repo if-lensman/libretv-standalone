@@ -83,21 +83,13 @@ public final class StandaloneFlowTest extends TestCase {
         fillManual("  手动测试源  ", "https://manual.example/api.php/provide/vod/"); click("添加来源"); await("来源已添加");
         assertEquals(1,new LocalRepository(context).sources().length());
         assertEquals("手动测试源",repo.sources().getJSONObject(0).getString("name"));
-        await("删除 · 手动测试源");
+        await("手动测试源");
         fillManual("重复", "https://manual.example/api.php/provide/vod"); click("添加来源"); await("该来源地址已存在，无需重复添加");
         assertEquals(1,repo.sources().length());
     }
     public void testPhoneSeparatesVideoAndLiveSourceSettings() throws Exception {
         activity=instrument.startActivitySync(new Intent(context,PhoneActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
-        click("设置"); await("扫码添加视频源"); await("扫码添加直播源");
-        View video=null,live=null;
-        for(View v:views()) if(v instanceof Button) {
-            if("扫码添加视频源".contentEquals(((Button)v).getText())) video=v;
-            if("扫码添加直播源".contentEquals(((Button)v).getText())) live=v;
-        }
-        assertNotNull(video);assertNotNull(live);assertNotSame(video.getParent(),live.getParent());
-        assertFalse(texts().contains("扫码添加来源"));
-        click("影视来源");await("视频来源配置");await("手动添加来源");
+        click("设置");await("内容来源");click("影视来源");await("视频来源配置");await("手动添加来源");await("扫码添加视频源");
         assertFalse(texts().contains("导入 M3U 文件"));
         click("设置");click("直播订阅");await("导入 M3U 文件");await("添加直播订阅");
         assertFalse(texts().contains("手动添加来源"));assertFalse(texts().contains("添加来源"));
@@ -126,8 +118,8 @@ public final class StandaloneFlowTest extends TestCase {
         activity=instrument.startActivitySync(new Intent(context,PhoneActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
         await("搜索电影、电视剧");assertFalse(texts().contains("NAS 密码"));
         List<View> fields=views();instrument.runOnMainSync(()->{for(View v:fields)if(v instanceof EditText)((EditText)v).setText("Fixture");});
-        click("搜索");await("Fixture title");click("Fixture title");await("第 1 集");click("加入本机收藏");await("已加入本机收藏");click("取消收藏");await("已取消收藏");click("加入本机收藏");await("已加入本机收藏");click("返回选片");openLibrary("本机收藏夹");await("Fixture title");
-        click("返回选片");openSources();await("删除 · Fixture source");click("删除 · Fixture source");
+        click("搜索");await("Fixture title");click("Fixture title");await("第 1 集");click("收藏");await("已加入本机收藏");click("取消收藏");await("已取消收藏");click("收藏");await("已加入本机收藏");click("首页");openLibrary("本机收藏夹");await("Fixture title");
+        click("首页");openSources();manage("来源管理 · Fixture source",0);
         Thread.sleep(200);
         java.lang.reflect.Field dialogField=PhoneActivity.class.getDeclaredField("dialog");dialogField.setAccessible(true);
         instrument.runOnMainSync(()->((android.app.AlertDialog)read(dialogField,activity)).getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick());
@@ -238,9 +230,9 @@ public final class StandaloneFlowTest extends TestCase {
     public void testQrPhotoNeedsConfirmationAndImportsIntoLibrary()throws Exception {
         repo.saveSources(new JSONArray());
         activity=instrument.startActivitySync(new Intent(context,PhoneActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
-        openSources();await("扫码配置源");
+        openSources();await("扫码添加视频源");
         androidx.test.runner.lifecycle.ActivityLifecycleMonitor monitor=androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance();
-        click("扫码配置源");Activity[] scanner={null};long end=System.currentTimeMillis()+5000;
+        click("扫码添加视频源");Activity[] scanner={null};long end=System.currentTimeMillis()+5000;
         while(scanner[0]==null && System.currentTimeMillis()<end){instrument.runOnMainSync(()->{for(Activity candidate:monitor.getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))if(candidate instanceof SourceScannerActivity)scanner[0]=candidate;});Thread.sleep(100);}
         assertNotNull(scanner[0]);
         String value=new JSONObject().put("sources",new JSONArray().put(new JSONObject().put("name","扫码测试源").put("url",root+"/cms"))).toString();
@@ -305,11 +297,11 @@ public final class StandaloneFlowTest extends TestCase {
         View card=views().stream().filter(v->v instanceof TextView && "Fixture fast".contentEquals(((TextView)v).getText())).findFirst().get();
         await("Fixture slow");assertTrue("Existing card replaced",card.isAttachedToWindow());
         assertTrue(texts().stream().anyMatch(t->t.startsWith("搜索已结束 · 2 / 2")));
-        click("返回选片");
+        click("首页");
         instrument.runOnMainSync(()->{for(View v:findViewsOnMain())if(v instanceof EditText)((EditText)v).setText("Second");});
-        click("搜索");await("Second fast");click("返回选片");openSources();Thread.sleep(4500);
-        assertTrue("Background search replaced current page",texts().contains("扫码配置源"));
-        click("返回选片");
+        click("搜索");await("Second fast");click("首页");openSources();Thread.sleep(4500);
+        assertTrue("Background search replaced current page",texts().contains("扫码添加视频源"));
+        click("首页");
         instrument.runOnMainSync(()->{for(View v:findViewsOnMain())if(v instanceof EditText)((EditText)v).setText("Third");});
         click("搜索");await("Third fast");click("停止搜索");Thread.sleep(4500);
         assertFalse("Cancelled source appended results",texts().contains("Third slow"));
@@ -336,8 +328,8 @@ public final class StandaloneFlowTest extends TestCase {
         repo.favorites("/api/favorites",new JSONObject().put("source",src).put("item",item),"POST");
         PlaybackStore store=new PlaybackStore(context);store.add(src,item,"Fixture title");store.save(src,item,"Fixture title",1,4000,12000);
         activity=instrument.startActivitySync(new Intent(context,PhoneActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
-        openLibrary("播放列表");await("上次看到第 2 集 · 0:04 / 0:12");screenshot("standalone-playlist.png");
-        click("继续播放 · Fixture title");
+        openLibrary("播放列表");await("第 2 集 · 已看 0分4秒");screenshot("standalone-playlist.png");
+        clickDescription("播放 · Fixture title");
         Activity[] playerActivity={null};long end=System.currentTimeMillis()+10000;
         while(playerActivity[0]==null && System.currentTimeMillis()<end){instrument.runOnMainSync(()->{
             for(Activity candidate:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))
@@ -347,12 +339,12 @@ public final class StandaloneFlowTest extends TestCase {
         long[] position={0};instrument.runOnMainSync(()->{currentPlayer().pause();position[0]=currentPlayer().getCurrentPosition();});
         assertEquals(1,currentIndex());assertTrue("Playlist did not restore seek: "+position[0],position[0]>=3900);
         assertTrue(new PlaybackStore(context).contains(src,item));finishPlayer();activity=phone;
-        await("返回选片");click("返回选片");openLibrary("播放列表");click("移出列表 · Fixture title");
-        await("播放列表为空，先搜索一部想看的影片吧");assertNotNull(new PlaybackStore(context).find(src,item));
+        await("返回选片");click("首页");openLibrary("播放列表");manage("管理 · Fixture title",1);confirm();
+        await("片单还是空的，去找一部想看的吧。");assertNotNull(new PlaybackStore(context).find(src,item));
         assertEquals(1,repo.favorites("/api/favorites",null,"GET").getJSONArray("items").length());
-        click("返回选片");openLibrary("本机收藏夹");await("收藏仅保存在本机，无需 NAS、账号或服务器。");screenshot("standalone-favorites-local.png");
-        click("加入播放列表 · Fixture title");await("已加入播放列表");assertEquals(1,new PlaybackStore(context).playlist().length());
-        click("移除收藏 · Fixture title");await("暂无收藏，在影片详情页点击加入本机收藏");
+        click("首页");openLibrary("本机收藏夹");await("我的收藏");screenshot("standalone-favorites-local.png");
+        manage("管理 · Fixture title",0);await("已加入播放列表");assertEquals(1,new PlaybackStore(context).playlist().length());
+        manage("管理 · Fixture title",1);confirm();await("喜欢的影片，点一下收藏就会出现在这里。");
         assertEquals(1,new PlaybackStore(context).playlist().length());
     }
     private void adoptRotatedPlayer(Activity old)throws Exception {
@@ -411,7 +403,10 @@ public final class StandaloneFlowTest extends TestCase {
     private void collect(View view,List<View> out){out.add(view);if(view instanceof ViewGroup){ViewGroup group=(ViewGroup)view;for(int i=0;i<group.getChildCount();i++)collect(group.getChildAt(i),out);}}
     private List<String> texts(){List<String> out=new ArrayList<>();for(View v:views())if(v instanceof TextView)out.add(((TextView)v).getText().toString());return out;}
     private void await(String text)throws Exception{long end=System.currentTimeMillis()+10000;while(System.currentTimeMillis()<end){if(texts().contains(text))return;Thread.sleep(100);}fail("Missing UI: "+text+"; "+texts());}
-    private void openSources()throws Exception{click("设置");await("影视来源");click("影视来源");await("视频来源配置");}
-    private void openLibrary(String label)throws Exception{click("历史");await("观看历史");if(!"观看历史".equals(label))click(label);}
-    private void click(String text)throws Exception{for(View v:views())if(v instanceof TextView && ((TextView)v).getText().toString().equals(text)){View target=v;while(!target.isClickable() && target.getParent() instanceof View)target=(View)target.getParent();View action=target;instrument.runOnMainSync(action::performClick);instrument.waitForIdleSync();return;}fail("Missing action: "+text);}
+    private void clickDescription(String description){for(View v:views())if(description.contentEquals(String.valueOf(v.getContentDescription()))){instrument.runOnMainSync(v::performClick);instrument.waitForIdleSync();return;}fail("Missing "+description);}
+    private void manage(String description,int index)throws Exception{clickDescription(description);java.lang.reflect.Field f=PhoneActivity.class.getDeclaredField("dialog");f.setAccessible(true);instrument.runOnMainSync(()->{android.app.AlertDialog d=(android.app.AlertDialog)read(f,activity);ListView list=d.getListView();list.performItemClick(list.getChildAt(index),index,list.getAdapter().getItemId(index));});instrument.waitForIdleSync();}
+    private void confirm()throws Exception{java.lang.reflect.Field f=PhoneActivity.class.getDeclaredField("dialog");f.setAccessible(true);instrument.runOnMainSync(()->((android.app.AlertDialog)read(f,activity)).getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick());instrument.waitForIdleSync();}
+    private void openSources()throws Exception{click("设置");await("内容来源");click("影视来源");await("视频来源配置");}
+    private void openLibrary(String label)throws Exception{click("历史");await("观看历史");if(!"观看历史".equals(label))click("播放列表".equals(label)?"片单":"收藏");}
+    private void click(String text)throws Exception{for(View v:views())if(v instanceof TextView && (((TextView)v).getText().toString().equals(text)||((TextView)v).getText().toString().startsWith(text+"    ›"))){View target=v;while(!target.isClickable() && target.getParent() instanceof View)target=(View)target.getParent();View action=target;instrument.runOnMainSync(action::performClick);instrument.waitForIdleSync();return;}fail("Missing action: "+text);}
 }

@@ -31,13 +31,13 @@ public final class TvHomeActivity extends Activity {
     private Future<?> pending;
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private GradientDrawable rounded(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
-    private StateListDrawable selectable(int normal){StateListDrawable d=new StateListDrawable();GradientDrawable f=rounded(0xff3c293e,14);f.setStroke(dp(3),0xfff15b9b);d.addState(new int[]{android.R.attr.state_focused},f);d.addState(new int[]{},rounded(normal,14));return d;}
+    private StateListDrawable selectable(int normal){StateListDrawable d=new StateListDrawable();GradientDrawable f=rounded(0xff3c293e,14);f.setStroke(dp(3),0xfff5f7fa);d.addState(new int[]{android.R.attr.state_focused},f);d.addState(new int[]{},rounded(normal,14));return d;}
     private TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextColor(color);t.setTextSize(size);return t;}
     private TextView heading(String value,int size){TextView t=text(value,size,0xfff1f5fa);t.setTypeface(null,Typeface.BOLD);return t;}
-    @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,WindowManager.LayoutParams.FLAG_FULLSCREEN);recommendations=new RecommendationRepository(this);history=new PlaybackStore(this);if(state!=null){category=state.getString("category","movie");page=state.getString("page","home");focusKey=state.getString("focusKey","hero");}UpdateActivity.checkInBackground(this);}
+    @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,WindowManager.LayoutParams.FLAG_FULLSCREEN);recommendations=new RecommendationRepository(this);history=new PlaybackStore(this);if(state!=null){category=state.getString("category","movie");page=state.getString("page","home");focusKey=state.getString("focusKey","hero");}if(state==null&&"history".equals(getIntent().getStringExtra("page"))) {page="history";focusKey="history-0";}UpdateActivity.checkInBackground(this);}
     @Override protected void onResume(){super.onResume();started=true;render();}
     private void register(View view,String key,Runnable action){
-        StateListDrawable ring=new StateListDrawable();GradientDrawable outline=rounded(0x00000000,14);outline.setStroke(dp(3),0xfff15b9b);ring.addState(new int[]{android.R.attr.state_focused},outline);ring.addState(new int[]{},rounded(0x00000000,14));view.setForeground(ring);
+        StateListDrawable ring=new StateListDrawable();GradientDrawable outline=rounded(0x00000000,14);outline.setStroke(dp(3),0xfff5f7fa);ring.addState(new int[]{android.R.attr.state_focused},outline);ring.addState(new int[]{},rounded(0x00000000,14));view.setForeground(ring);
         targets.put(key,view);view.setId(View.generateViewId());view.setFocusableInTouchMode(true);view.setFocusable(true);view.setClickable(true);view.setBackground(selectable(0xff1b2736));view.setOnClickListener(v->{focusKey=key;action.run();});view.setOnFocusChangeListener((v,focused)->{if(focused&&!restoring)focusKey=key;v.setElevation(focused?dp(4):0);});
     }
     private Button button(LinearLayout parent,String label,String key,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextColor(0xffedf2f8);b.setTextSize(15);b.setMinWidth(0);b.setMinimumWidth(0);b.setPadding(dp(14),0,dp(14),0);register(b,key,action);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(46));p.setMargins(dp(4),dp(4),dp(4),dp(4));parent.addView(b,p);return b;}
@@ -48,8 +48,9 @@ public final class TvHomeActivity extends Activity {
     private void render(){
         if(dead)return;int ticket=++generation;if(pending!=null)pending.cancel(true);String restore=focusKey;restoring=true;targets.clear();recent=history.all().optJSONObject(0);items=recommendations.cached(category);
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(0xff101723);root.setPadding(dp(30),dp(16),dp(30),dp(12));
-        LinearLayout header=row(root);header.setGravity(Gravity.CENTER_VERTICAL);TextView brand=heading("LibreTV",27);brand.setPadding(dp(4),0,dp(26),0);brand.getPaint().setShader(new android.graphics.LinearGradient(0,0,dp(140),0,new int[]{0xff24d0e7,0xfff15b9b},null,android.graphics.Shader.TileMode.CLAMP));header.addView(brand);
+        LinearLayout header=row(root);header.setGravity(Gravity.CENTER_VERTICAL);ImageView brand=PiankeUi.brand(this,100,52);header.addView(brand);
         button(header,"首页","nav-home",()->{page="home";focusKey="hero";render();});button(header,"搜索","nav-search",()->open("search"));button(header,"直播","nav-live",()->startActivity(new Intent(this,LiveBrowseActivity.class)));button(header,"收藏","nav-favorites",()->open("favorites"));button(header,"历史","nav-history",()->{page="history";focusKey="history-0";render();});button(header,"设置","nav-settings",()->open("settings"));
+        View active=targets.get(page.equals("history")?"nav-history":"nav-home");if(active!=null)active.setBackground(PiankeUi.focus(this,true));
         TextView time=text(new java.text.SimpleDateFormat("HH:mm",Locale.getDefault()).format(new Date()),15,0xffa9b8c9);time.setGravity(Gravity.END);header.addView(time,new LinearLayout.LayoutParams(0,-2,1));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(5),dp(16),dp(5),dp(6));scroll.addView(body);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         if(page.equals("history"))renderHistory();else if(page.equals("more"))renderMore();else renderHome();
@@ -113,8 +114,28 @@ public final class TvHomeActivity extends Activity {
         link("more","film-"+(count-1),View.FOCUS_DOWN);
     }
     private void renderHistory(){
-        LinearLayout title=row(body);title.addView(heading("观看历史",24),new LinearLayout.LayoutParams(0,-2,1));button(title,"播放列表","playlist",()->open("playlist"));button(title,"返回首页","back-home",()->{page="home";focusKey="hero";render();});JSONArray all=history.all();if(all.length()==0){body.addView(text("还没有观看记录，先找一部想看的。",18,0xffa9b8c9));return;}
-        for(int i=0;i<all.length();i++){JSONObject entry=all.optJSONObject(i);if(entry==null)continue;Button b=button(body,entry.optString("title")+"  ·  第 "+(entry.optInt("index")+1)+" 集  ·  "+clock(entry.optLong("position")),"history-"+i,()->resume(entry));b.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);b.setLayoutParams(new LinearLayout.LayoutParams(-1,dp(58)));}
+        LinearLayout title=row(body);title.addView(heading("观看历史",24),new LinearLayout.LayoutParams(0,-2,1));
+        button(title,"收藏","favorites",()->open("favorites"));button(title,"片单","playlist",()->open("playlist"));
+        JSONArray all=history.all();
+        if(all.length()==0){body.addView(text("还没有观看记录，先找一部想看的。",18,0xffa9b8c9));button(body,"去搜索","empty-search",()->open("search"));return;}
+        button(title,"管理","manage-history",()->new android.app.AlertDialog.Builder(this).setTitle("清空观看历史？").setMessage("收藏、来源和片单中的进度会保留。")
+            .setNegativeButton("取消",null).setPositiveButton("清空",(d,w)->{history.clear();focusKey="nav-history";render();}).show());
+        LinearLayout top=row(body);JSONObject first=all.optJSONObject(0);
+        FrameLayout mainCard=new FrameLayout(this);LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(0,dp(250),1.5f);hp.setMargins(0,dp(14),dp(16),dp(10));top.addView(mainCard,hp);
+        register(mainCard,"history-0",()->resume(first));mainCard.setClipToOutline(true);
+        ImageView art=new ImageView(this);art.setScaleType(ImageView.ScaleType.CENTER_CROP);mainCard.addView(art,new FrameLayout.LayoutParams(-1,-1));JSONObject item=first.optJSONObject("item");posters.loadPublic(art,item==null?"":item.optString("pic"),R.drawable.poster_placeholder);
+        LinearLayout copy=new LinearLayout(this);copy.setOrientation(LinearLayout.VERTICAL);copy.setPadding(dp(20),dp(20),dp(20),dp(14));copy.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0x00101723,0xee101723}));mainCard.addView(copy,new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM));
+        copy.addView(text("接着看",13,0xffd1dbe7));copy.addView(heading(first.optString("title"),25));copy.addView(text(PiankeUi.position(first),14,0xffc1ceda));PiankeUi.progress(copy,first);mainCard.setContentDescription("继续观看 · "+first.optString("title"));
+        LinearLayout side=new LinearLayout(this);side.setOrientation(LinearLayout.VERTICAL);top.addView(side,new LinearLayout.LayoutParams(0,-2,1));
+        for(int i=1;i<Math.min(3,all.length());i++) historyCard(side,all.optJSONObject(i),i,true);
+        int columns=4;LinearLayout current=null;
+        for(int i=3;i<all.length();i++){if((i-3)%columns==0)current=row(body);historyCard(current,all.optJSONObject(i),i,false);}
+    }
+    private void historyCard(LinearLayout parent,JSONObject entry,int index,boolean compact){
+        if(entry==null)return;LinearLayout card=new LinearLayout(this);card.setOrientation(compact?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);card.setGravity(Gravity.CENTER_VERTICAL);card.setPadding(dp(10),dp(10),dp(10),dp(10));register(card,"history-"+index,()->resume(entry));
+        LinearLayout.LayoutParams p=compact?new LinearLayout.LayoutParams(-1,dp(118)):new LinearLayout.LayoutParams(dp((getResources().getConfiguration().screenWidthDp-90)/4),-2);p.setMargins(dp(4),dp(8),dp(4),0);parent.addView(card,p);
+        ImageView cover=new ImageView(this);cover.setScaleType(ImageView.ScaleType.CENTER_CROP);card.addView(cover,new LinearLayout.LayoutParams(compact?dp(65):-1,dp(compact?96:140)));JSONObject item=entry.optJSONObject("item");posters.loadPublic(cover,item==null?"":item.optString("pic"),R.drawable.poster_placeholder);if(item==null||item.optString("pic").isEmpty()){cover.setScaleType(ImageView.ScaleType.CENTER_INSIDE);cover.setPadding(dp(12),dp(12),dp(12),dp(12));}
+        LinearLayout copy=new LinearLayout(this);copy.setOrientation(LinearLayout.VERTICAL);copy.setPadding(dp(compact?14:2),dp(6),0,0);card.addView(copy,new LinearLayout.LayoutParams(compact?0:-1,-2,compact?1:0));TextView title=heading(entry.optString("title"),17);title.setMaxLines(2);copy.addView(title);copy.addView(text(PiankeUi.position(entry),12,0xffa9b8c9));PiankeUi.progress(copy,entry);
     }
     private static String clock(long ms){return String.format(Locale.ROOT,"%02d:%02d",ms/60000,ms/1000%60);}
     @SuppressWarnings("deprecation") @Override public void onBackPressed(){if(!page.equals("home")){page="home";focusKey="hero";render();}else super.onBackPressed();}

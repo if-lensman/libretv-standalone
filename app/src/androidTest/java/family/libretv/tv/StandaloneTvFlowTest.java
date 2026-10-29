@@ -72,7 +72,7 @@ public final class StandaloneTvFlowTest extends TestCase {
                 if(activity.isDestroyed())for(Activity candidate:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))
                     if(candidate instanceof MainActivity)activity=(MainActivity)candidate;
             });
-            if(activity.hasWindowFocus()) target=views().stream().filter(v->v instanceof TextView && text.contentEquals(((TextView)v).getText()) && v.isShown() && v.getWidth()>0 && v.getHeight()>0 && v.isEnabled()).findFirst().orElse(null);
+            if(activity.hasWindowFocus()) target=views().stream().filter(v->v instanceof TextView && (text.contentEquals(((TextView)v).getText())||((TextView)v).getText().toString().startsWith(text+"    ›")) && !("搜索".equals(text)&&"顶部导航 · 搜索".contentEquals(String.valueOf(v.getContentDescription()))) && v.isShown() && v.getWidth()>0 && v.getHeight()>0 && v.isEnabled()).findFirst().orElse(null);
             if(target==null)Thread.sleep(75);
         }
         assertNotNull("Missing ready button "+text,target);View action=target;
@@ -96,8 +96,8 @@ public final class StandaloneTvFlowTest extends TestCase {
         repo.saveSources(new JSONArray().put(source("/slow")).put(source("/cms")));launch();
         key(KeyEvent.KEYCODE_DPAD_RIGHT);assertTrue(focused() instanceof Button && "本机收藏夹".contentEquals(((Button)focused()).getText()));
         key(KeyEvent.KEYCODE_DPAD_RIGHT);assertTrue(focused() instanceof Button && "播放列表".contentEquals(((Button)focused()).getText()));
-        key(KeyEvent.KEYCODE_DPAD_CENTER);await("播放列表为空，先搜索一部想看的影片吧");key(KeyEvent.KEYCODE_BACK);
-        key(KeyEvent.KEYCODE_DPAD_RIGHT);key(KeyEvent.KEYCODE_DPAD_CENTER);await("收藏仅保存在本机，无需 NAS、账号或服务器。");key(KeyEvent.KEYCODE_BACK);
+        key(KeyEvent.KEYCODE_DPAD_CENTER);await("片单还是空的，去找一部想看的吧。");key(KeyEvent.KEYCODE_BACK);
+        key(KeyEvent.KEYCODE_DPAD_RIGHT);key(KeyEvent.KEYCODE_DPAD_CENTER);await("还没有收藏。喜欢的影片，点一下收藏就会出现在这里。");key(KeyEvent.KEYCODE_BACK);
         search("Fixture");await("Fixture title");
         assertTrue("Search focus was stolen",focused() instanceof Button && "搜索".contentEquals(((Button)focused()).getText()));
         key(KeyEvent.KEYCODE_DPAD_DOWN);View card=focused();assertTrue(card instanceof PosterCard);
@@ -110,20 +110,20 @@ public final class StandaloneTvFlowTest extends TestCase {
         });
         screenshot("tv-incremental-results.png");
         key(KeyEvent.KEYCODE_DPAD_RIGHT);assertTrue(focused() instanceof PosterCard);key(KeyEvent.KEYCODE_DPAD_UP);assertTrue(focused() instanceof Button);
-        search("Second");awaitPrefix("「Second」 ·");click("本机收藏夹");await("收藏仅保存在本机，无需 NAS、账号或服务器。");Thread.sleep(4500);
-        assertTrue("Background result switched page",texts().contains("刷新收藏夹"));
+        search("Second");awaitPrefix("「Second」 ·");click("本机收藏夹");await("还没有收藏。喜欢的影片，点一下收藏就会出现在这里。");Thread.sleep(4500);
+        assertTrue("Background result switched page",texts().contains("我的收藏"));
     }
     public void testDetailCanOpenWhileSlowSourceStillSearching()throws Exception {
         repo.saveSources(new JSONArray().put(source("/slow")).put(source("/cms")));launch();search("Fixture");await("Fixture title");
         assertTrue(texts().stream().anyMatch(t->t.contains("正在搜索…")));
         key(KeyEvent.KEYCODE_DPAD_DOWN);key(KeyEvent.KEYCODE_DPAD_CENTER);await("第 1 集");Thread.sleep(4500);
-        assertTrue("Search replaced detail",texts().contains("第 1 集"));click("加入播放列表");await("移出播放列表");assertEquals(1,new PlaybackStore(context).playlist().length());
+        assertTrue("Search replaced detail",texts().contains("第 1 集"));click("加入片单");await("移出片单");assertEquals(1,new PlaybackStore(context).playlist().length());
     }
     public void testPlaylistResumeAndEpisodeControlsPersistOnReopen()throws Exception {
         JSONObject source=source("/cms"),item=item();repo.saveSources(new JSONArray().put(source));
         PlaybackStore store=new PlaybackStore(context);store.add(source,item,"Fixture title");store.save(source,item,"Fixture title",1,4000,12000);
-        launch();click("播放列表");awaitPrefix("Fixture title · TV source /cms · 第 2 集 · 00:04");screenshot("tv-local-playlist.png");
-        click("继续播放 · Fixture title");ready();long[] pos={0};instrument.runOnMainSync(()->{player().pause();pos[0]=player().getCurrentPosition();});
+        launch();click("播放列表");await("第 2 集 · 已看 0分4秒");screenshot("tv-local-playlist.png");
+        click("继续播放");ready();long[] pos={0};instrument.runOnMainSync(()->{player().pause();pos[0]=player().getCurrentPosition();});
         assertEquals(1,field("episodeIndex"));assertTrue("Seek was not restored: "+pos[0],pos[0]>=3900);
         key(KeyEvent.KEYCODE_MENU);key(KeyEvent.KEYCODE_DPAD_RIGHT);
         assertTrue("Cannot navigate right to previous episode",focused() instanceof Button && "上一集".contentEquals(((Button)focused()).getText()));
@@ -133,10 +133,10 @@ public final class StandaloneTvFlowTest extends TestCase {
         key(KeyEvent.KEYCODE_DPAD_CENTER);ready();assertEquals(1,field("episodeIndex"));
         instrument.runOnMainSync(()->{player().seekTo(5000);player().pause();});screenshot("tv-player-controls.png");close();
         assertEquals(1,new PlaybackStore(context).find(source,item).getInt("index"));
-        launch();click("播放列表");click("继续播放 · Fixture title");ready();instrument.runOnMainSync(()->{player().pause();pos[0]=player().getCurrentPosition();});assertTrue(pos[0]>=4900);
+        launch();click("播放列表");click("继续播放");ready();instrument.runOnMainSync(()->{player().pause();pos[0]=player().getCurrentPosition();});assertTrue(pos[0]>=4900);
     }
     public void testAutoNextAndLastEpisodeBoundary()throws Exception {
-        JSONObject source=source("/cms"),item=item();repo.saveSources(new JSONArray().put(source));new PlaybackStore(context).add(source,item,"Fixture title");launch();click("播放列表");click("开始播放 · Fixture title");ready();
+        JSONObject source=source("/cms"),item=item();repo.saveSources(new JSONArray().put(source));new PlaybackStore(context).add(source,item,"Fixture title");launch();click("播放列表");click("开始播放");ready();
         instrument.runOnMainSync(()->{player().seekTo(player().getDuration()-150);player().play();});
         long end=System.currentTimeMillis()+10000;while((int)field("episodeIndex")!=1 && System.currentTimeMillis()<end)Thread.sleep(100);assertEquals(1,field("episodeIndex"));ready();
         instrument.runOnMainSync(()->{player().seekTo(player().getDuration()-150);player().play();});Thread.sleep(1200);assertEquals(1,field("episodeIndex"));
@@ -144,11 +144,13 @@ public final class StandaloneTvFlowTest extends TestCase {
     public void testSourceFlagsAndLocalFavoritesRemainIndependent()throws Exception {
         JSONObject good=source("/cms"),bad=source("/bad").put("enabled",false);repo.saveSources(new JSONArray().put(good).put(bad));
         repo.favorites("/api/favorites",new JSONObject().put("source",good).put("item",item()),"POST");launch();search("Fixture");await("Fixture title");
-        awaitPrefix("「Fixture」 · 2 个结果 · 1 / 1 个来源完成 · 0 个不可用");click("本机收藏夹");click("加入播放列表");await("已加入播放列表");click("移除收藏");await("还没有收藏。进入影片详情，点击收藏即可。");
-        assertEquals(1,new PlaybackStore(context).playlist().length());click("‹ 返回首页");click("播放列表");click("移出列表");await("播放列表为空，先搜索一部想看的影片吧");
-        click("‹ 返回首页");click("设置");
-        for(View v:views())if(v instanceof CheckBox && ((CheckBox)v).isChecked()){View choice=v;instrument.runOnMainSync(choice::requestFocus);key(KeyEvent.KEYCODE_DPAD_CENTER);}
+        awaitPrefix("「Fixture」 · 2 个结果 · 1 / 1 个来源完成 · 0 个不可用");click("本机收藏夹");await("我的收藏");
+        // Library menu behavior is exercised by PiankeDesignFlowTest. Source switches remain independent.
+        assertEquals(1,repo.favorites("/api/favorites",null,"GET").getJSONArray("items").length());
+        click("设置");click("视频来源");
+        for(View v:views())if(v instanceof Switch && ((Switch)v).isChecked()){View choice=v;instrument.runOnMainSync(choice::requestFocus);key(KeyEvent.KEYCODE_DPAD_CENTER);}
         close();launch();search("Fixture");await("请在设置中启用至少一个来源");
+        assertEquals(1,repo.favorites("/api/favorites",null,"GET").getJSONArray("items").length());
     }
     public void testCancelledSearchCannotAppendToNewKeyword()throws Exception {
         repo.saveSources(new JSONArray().put(source("/slow")).put(source("/fast")));launch();search("First");await("First fast");click("停止搜索");search("Second");await("Second fast");await("Second slow");

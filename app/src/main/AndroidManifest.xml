@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
-    <application tools:replace="android:allowBackup" android:theme="@style/AppTheme" android:label="LibreTV 独立研究版"
+    <application tools:replace="android:allowBackup" android:theme="@style/AppTheme" android:label="片刻"
         android:icon="@drawable/banner" android:banner="@drawable/banner"
         android:usesCleartextTraffic="true" android:allowBackup="false" android:supportsRtl="true">
         <receiver android:name=".UpdateInstallReceiver" android:exported="false" />

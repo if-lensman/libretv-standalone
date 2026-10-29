@@ -33,11 +33,11 @@ public final class LiveBrowseActivity extends Activity {
     private int columns,renderGeneration;
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private GradientDrawable shape(int color,int radius,int border){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));if(border!=0)d.setStroke(dp(2),border);return d;}
-    private StateListDrawable focusBackground(boolean selected){StateListDrawable d=new StateListDrawable();d.addState(new int[]{android.R.attr.state_focused},shape(0xff3a243c,14,0xfff15b9b));d.addState(new int[]{},shape(selected?0xff293544:0xff1b2736,14,selected?0xff52667b:0));return d;}
+    private StateListDrawable focusBackground(boolean selected){StateListDrawable d=new StateListDrawable();d.addState(new int[]{android.R.attr.state_focused},shape(0xff304052,14,0xfff5f7fa));d.addState(new int[]{},shape(selected?0xff293544:0xff1b2736,14,selected?0xff52667b:0));return d;}
     private TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);return t;}
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        try{repository=new LiveRepository(this);if(state!=null){group=state.getString("group","全部");focusKey=state.getString("focusKey","");}else if(!repository.lastChannel().isEmpty())focusKey="channel:"+repository.lastChannel();render();refresh(false);}
+        try{repository=new LiveRepository(this);if(state!=null){group=state.getString("group","全部");focusKey=state.getString("focusKey","");}else if(!repository.lastChannel().isEmpty())focusKey="channel:"+repository.lastChannel();render();if(getIntent().getBooleanExtra("openSources",false))subscriptions();else refresh(false);}
         catch(Exception e){TextView message=text("频道资料无法读取，请返回后重试",20,0xffffffff);setContentView(message);}
     }
     private Button button(LinearLayout parent,String label,String key,boolean selected,Runnable action){
@@ -130,6 +130,18 @@ public final class LiveBrowseActivity extends Activity {
             LivePlaylistFile.importInto(this,repository,uri);int count=repository.channels().length();
             main.post(()->{if(dead)return;group="全部";focusKey="import";renderSafely();notice.setText("已导入频道，当前共 "+count+" 个 · 更新时重新导入同名文件");});
         }catch(Exception e){main.post(()->{if(!dead)notice.setText("导入失败，已有频道保留 · "+(e.getMessage()==null?"请检查文件或重新选择":e.getMessage()));});}});
+    }
+    private void subscriptions(){
+        final JSONArray entries;try{entries=repository.subscriptions();}catch(Exception e){notice.setText("订阅无法读取，请重试");return;}String[] labels=new String[entries.length()+2];labels[0]="添加直播订阅";labels[1]="导入 M3U 文件";
+        for(int i=0;i<entries.length();i++){JSONObject entry=entries.optJSONObject(i);labels[i+2]=entry.optString("name")+(entry.optBoolean("enabled",true)?" · 已启用":" · 已停用");}
+        new AlertDialog.Builder(this).setTitle("直播订阅").setItems(labels,(d,w)->{
+            if(w==0)configure();else if(w==1)pickPlaylist();else {JSONObject entry=entries.optJSONObject(w-2);String id=entry.optString("id");
+                new AlertDialog.Builder(this).setTitle(entry.optString("name")).setItems(new String[]{entry.optBoolean("enabled",true)?"停用订阅":"启用订阅","删除订阅"},(dialog,which)->{
+                    if(which==0){try{repository.enable(id,!entry.optBoolean("enabled",true));subscriptions();}catch(Exception e){notice.setText(e.getMessage());}}
+                    else new AlertDialog.Builder(this).setMessage("删除这个直播订阅？频道与该订阅的收藏将一并移除。") .setNegativeButton("取消",null).setPositiveButton("删除",(confirm,index)->{try{repository.remove(id);renderSafely();subscriptions();}catch(Exception e){notice.setText(e.getMessage());}}).show();
+                }).setNegativeButton("返回",(dialog,which)->subscriptions()).show();
+            }
+        }).setNegativeButton("关闭",null).show();
     }
     private void configure(){LinearLayout fields=new LinearLayout(this);fields.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("订阅名称");fields.addView(name);EditText url=new EditText(this);url.setSingleLine(true);url.setHint("M3U订阅地址");fields.addView(url);new AlertDialog.Builder(this).setTitle("添加直播订阅").setView(fields).setNegativeButton("取消",null).setPositiveButton("添加",(d,w)->{try{repository.saveSubscription(null,name.getText().toString(),url.getText().toString());refresh(true);}catch(Exception e){notice.setText(e.getMessage());}}).show();}
     private void refresh(boolean force){if(refreshing)return;refreshing=true;if(notice!=null)notice.setText("正在检查频道…");worker.submit(()->{try{LiveRepository.Refresh result=repository.refresh(force);main.post(()->{if(dead)return;refreshing=false;renderSafely();notice.setText(result.failed>0?"部分订阅更新失败，已有频道仍可使用":result.updated>0?"频道已更新 · 长按确认或菜单键收藏":"方向键选择频道 · 确认播放 · 长按确认或菜单键收藏");});}catch(Exception e){main.post(()->{if(!dead){refreshing=false;notice.setText("更新未完成，已有频道仍可使用");}});}});}

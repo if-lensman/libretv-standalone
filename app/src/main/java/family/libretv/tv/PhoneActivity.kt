@@ -118,7 +118,7 @@ class PhoneActivity : Activity() {
         }
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(backgroundColor) }
         scroll.addView(content); root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
-        val tab = when(name) { "home","recommendations" -> "首页"; "live" -> "直播"; "history","favorites","playlist" -> "历史"; "settings","config","live-sources" -> "设置"; else -> "搜索" }
+        val tab = when(name) { "home","recommendations" -> "首页"; "live" -> "直播"; "history","favorites","playlist" -> "历史"; "settings","config","live-sources" -> "设置"; "controls","batch" -> "历史"; else -> "搜索" }
         val navigation = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(6),dp(5),dp(6),dp(5)); setBackgroundColor(Color.rgb(13,19,29)); elevation=dp(6).toFloat() }
         val tabs=listOf("首页" to R.drawable.ic_nav_home,"搜索" to R.drawable.ic_nav_search,"直播" to R.drawable.ic_nav_live,"历史" to R.drawable.ic_nav_history,"设置" to R.drawable.ic_nav_settings)
         tabs.forEach { (label,icon) ->
@@ -140,7 +140,8 @@ class PhoneActivity : Activity() {
             v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom)); navigation.visibility=if(insets.isVisible(WindowInsetsCompat.Type.ime())) View.GONE else View.VISIBLE; insets
         }
         ViewCompat.requestApplyInsets(root)
-        content.addView(text(heading, 25f).apply { setTypeface(typeface, Typeface.BOLD) })
+        if(name == "home") content.addView(PiankeUi.brand(this,124,64))
+        else content.addView(text(heading, 25f).apply { setTypeface(typeface, Typeface.BOLD) })
         notice = text("", 14f).apply {
             setTextColor(accentColor); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
             visibility = View.GONE
@@ -160,7 +161,7 @@ class PhoneActivity : Activity() {
     private fun button(label: String, parent: LinearLayout = content, primary: Boolean = false, action: () -> Unit) = Button(this).apply {
         text = label; textSize = 15f; isAllCaps = false; minHeight = dp(48)
         setTextColor(if(primary) backgroundColor else Color.WHITE)
-        background = RippleDrawable(ColorStateList.valueOf(0x336BE2C3), surface(if(primary) accentColor else Color.rgb(34, 51, 66), 12), null)
+        background = RippleDrawable(ColorStateList.valueOf(0x33F15B9B), surface(if(primary) accentColor else Color.rgb(34, 51, 66), 12), null)
         setPadding(dp(10), dp(10), dp(10), dp(10))
         parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         setOnClickListener { if (!busy) action() }
@@ -196,15 +197,20 @@ class PhoneActivity : Activity() {
                 val card = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL; background = surface(Color.rgb(31, 47, 63), 12)
                     isClickable = true; isFocusable = true; clipToOutline = true
-                    foreground = RippleDrawable(ColorStateList.valueOf(0x336BE2C3), null, surface())
+                    foreground = RippleDrawable(ColorStateList.valueOf(0x33F15B9B), null, surface())
                     contentDescription = item.optString("name") + "，" + item.optString("sourceName")
                     setOnClickListener { if(!busy) detail(item) }
                 }
                 row.addView(card, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), dp(8), dp(4), dp(4)) })
-                poster(card, item.optString("pic"), -1, dp((width * 1.4f).toInt()))
-                card.addView(text(item.optString("name"), 16f).apply { maxLines = 2; setPadding(dp(8), dp(8), dp(8), 0); setTypeface(typeface, Typeface.BOLD) })
-                card.addView(text(item.optString("sourceName"), 12f).apply { setTextColor(accentColor); maxLines = 1; setPadding(dp(8), dp(4), dp(8), 0) })
-                card.addView(text(item.optString("remarks"), 12f).apply { setTextColor(secondaryColor); maxLines = 1; setPadding(dp(8), 0, dp(8), dp(8)) })
+                poster(card, item.optString("pic"), -1, dp((width * if(item.has("favoriteEntry")) 1.2f else 1.4f).toInt()))
+                val titleRow=buttonRow(card).apply {gravity=Gravity.CENTER_VERTICAL}
+                titleRow.addView(text(item.optString("name"),16f).apply {maxLines=2;setPadding(dp(8),dp(8),dp(4),0);setTypeface(typeface,Typeface.BOLD)},LinearLayout.LayoutParams(0,-2,1f))
+                if(item.has("favoriteEntry")) {
+                    val entry=item.getJSONObject("favoriteEntry")
+                    button("⋮",titleRow) {favoriteMenu(entry)}.apply {contentDescription="管理 · "+item.optString("name");layoutParams=LinearLayout.LayoutParams(dp(36),dp(40));setPadding(0,0,0,0);background=surface(Color.TRANSPARENT)}
+                    card.setOnLongClickListener {favoriteMenu(entry);true}
+                }else card.addView(text(item.optString("sourceName"),12f).apply {setTextColor(accentColor);maxLines=1;setPadding(dp(8),dp(4),dp(8),0)})
+                card.addView(text(item.optString("remarks"),12f).apply {setTextColor(secondaryColor);maxLines=1;setPadding(dp(8),0,dp(8),dp(8))})
             }
             repeat(columns - chunk.size) { row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) }
         }
@@ -242,8 +248,11 @@ class PhoneActivity : Activity() {
 
     private fun login(manualMessage: String? = null) {
         screen("config", "视频来源配置")
-        content.addView(text("用于电影、电视剧点播，支持 CMS JSON 来源或订阅。直播 M3U 请到直播源添加。", 14f))
-        val box = section("导入影视来源")
+        content.addView(text("添加自己的电影、电视剧来源。直播频道请在直播订阅中添加。",14f).apply {setTextColor(secondaryColor)})
+        val shortcuts=buttonRow(content)
+        rowButton(shortcuts,"扫码添加视频源") {startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),412)}
+        rowButton(shortcuts,"从文件导入") {startActivityForResult(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {type="*/*";addCategory(android.content.Intent.CATEGORY_OPENABLE)},410)}
+        val box = section("订阅与分享").apply {visibility=View.GONE}
         button("扫码配置源", box, true) { startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),412) }
         button("显示来源二维码", box) {
             val payload=try { SourceQrDecoder.sharePayload(JSONObject(client.local.exportSources()).toString()) } catch(e: Exception) { notice.text=e.message; return@button }
@@ -263,12 +272,13 @@ class PhoneActivity : Activity() {
             startActivityForResult(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply { type = "*/*"; addCategory(android.content.Intent.CATEGORY_OPENABLE) }, 410)
         }
         val manual = section("手动添加来源")
+        manual.addView(text("支持 CMS JSON 接口地址",13f).apply {setTextColor(secondaryColor)})
         val name = input("源名称", "", parent = manual)
         val url = input("来源地址", "", parent = manual)
         val manualFeedback = text(manualMessage.orEmpty(), 14f).apply {
             setTextColor(accentColor); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
-        button("添加来源", manual) {
+        button("添加来源", manual,true) {
             hideKeyboard()
             val value = JSONObject().put("name", name.text.toString().trim().ifBlank { "自定义源" }).put("url",url.text.toString()).toString()
             work("正在保存…", manualFeedback) {
@@ -287,22 +297,20 @@ class PhoneActivity : Activity() {
                 type = "application/json"; addCategory(android.content.Intent.CATEGORY_OPENABLE); putExtra(android.content.Intent.EXTRA_TITLE,"libretv-sources.json")
             }, 411)
         }
+        setting(content,"订阅与分享","粘贴配置、二维码与导出") {box.visibility=if(box.visibility==View.VISIBLE)View.GONE else View.VISIBLE}
         val saved = section("已保存 · ${sources.length()} 个源")
         for(i in 0 until sources.length()) {
-            val item=sources.getJSONObject(i)
-            CheckBox(this).apply {
-                text = item.optString("name"); setTextColor(Color.WHITE); isChecked = item.optBoolean("enabled",true)
-                saved.addView(this)
-                setOnCheckedChangeListener { _, enabled ->
-                    work("正在保存…") { withContext(Dispatchers.IO) { client.local.setSourceEnabled(item.getString("key"),enabled) }; sources=client.local.sources(); notice.text="已保存" }
-                }
+            val item=sources.getJSONObject(i);val row=buttonRow(saved).apply {gravity=Gravity.CENTER_VERTICAL}
+            Switch(this).apply {
+                text=item.optString("name");setTextColor(Color.WHITE);isChecked=item.optBoolean("enabled",true);setPadding(dp(4),dp(12),dp(8),dp(12))
+                row.addView(this,LinearLayout.LayoutParams(0,-2,1f));setOnCheckedChangeListener {_,enabled->work("正在保存…"){withContext(Dispatchers.IO){client.local.setSourceEnabled(item.getString("key"),enabled)};sources=client.local.sources();notice.text="已保存"}}
             }
-            button("删除 · ${item.optString("name")}", saved) {
-                dialog = AlertDialog.Builder(this).setMessage("删除 ${item.optString("name")}？重启后不会自动补回。")
-                    .setNegativeButton("取消",null).setPositiveButton("删除") { _,_ ->
-                        work("正在删除…") { withContext(Dispatchers.IO) { client.local.removeSource(item.getString("key")) }; sources=client.local.sources(); results=JSONArray(); login() }
-                    }.show()
-            }
+            button("⋮",row) {
+                libraryMenu(item.optString("name"),listOf("删除来源" to {
+                    dialog=AlertDialog.Builder(this).setMessage("删除 ${item.optString("name")}？重启后不会自动补回。")
+                        .setNegativeButton("取消",null).setPositiveButton("删除") {_,_->work("正在删除…"){withContext(Dispatchers.IO){client.local.removeSource(item.getString("key"))};sources=client.local.sources();results=JSONArray();login()}}.show()
+                }))
+            }.apply {contentDescription="来源管理 · "+item.optString("name");layoutParams=LinearLayout.LayoutParams(dp(48),dp(48))}
         }
         button("返回选片") { home() }
     }
@@ -374,10 +382,10 @@ class PhoneActivity : Activity() {
         field.setOnEditorActionListener { _,action,_ -> if(action==EditorInfo.IME_ACTION_SEARCH) {submit();true} else false }
     }
     private fun home() {
-        screen("home","LibreTV")
+        screen("home","片刻")
         (content.getChildAt(0) as? TextView)?.apply {
             textSize=32f; setPadding(dp(2),dp(10),0,dp(16))
-            paint.shader=android.graphics.LinearGradient(0f,0f,dp(180).toFloat(),0f,intArrayOf(Color.rgb(30,208,234),accentColor),null,android.graphics.Shader.TileMode.CLAMP)
+            paint.shader=android.graphics.LinearGradient(0f,0f,dp(180).toFloat(),0f,intArrayOf(Color.rgb(255,147,191),accentColor),null,android.graphics.Shader.TileMode.CLAMP)
         }
         homeSearchBox()
         val categories=HorizontalScrollView(this).apply {isHorizontalScrollBarEnabled=false}
@@ -451,7 +459,7 @@ class PhoneActivity : Activity() {
         screen("search-landing", "搜索")
         (content.getChildAt(0) as? TextView)?.apply {
             setTextColor(accentColor); textSize=30f
-            paint.shader=android.graphics.LinearGradient(0f,0f,dp(180).toFloat(),0f,intArrayOf(Color.rgb(30,208,234),accentColor),null,android.graphics.Shader.TileMode.CLAMP)
+            paint.shader=android.graphics.LinearGradient(0f,0f,dp(180).toFloat(),0f,intArrayOf(Color.rgb(255,147,191),accentColor),null,android.graphics.Shader.TileMode.CLAMP)
         }
 
         val recent = PlaybackStore(this@PhoneActivity).all().optJSONObject(0)
@@ -494,27 +502,32 @@ class PhoneActivity : Activity() {
         }
         if(query.isNotEmpty()) button(if(searching) "查看搜索进度 · ${results.length()} 项" else "查看搜索结果 · ${results.length()} 项") { searchScreen() }
     }
+    private fun setting(parent: LinearLayout, title: String, subtitle: String = "", action: () -> Unit) =
+        PiankeUi.entry(parent, title, subtitle) { if(!busy) action() }
+    private fun libraryTabs(active: String) {
+        val row=buttonRow(content)
+        listOf("历史","收藏","片单").forEach { label ->
+            rowButton(row,label) { when(label) { "历史" -> historyScreen(); "收藏" -> favorites(); else -> playlistScreen() } }.apply {
+                setTextColor(if(label==active)accentColor else secondaryColor)
+                isSelected=label==active
+            }
+        }
+    }
+    private fun libraryMenu(title: String, actions: List<Pair<String, () -> Unit>>) {
+        dialog=AlertDialog.Builder(this).setTitle(title).setItems(actions.map {it.first}.toTypedArray()) { _,which -> actions[which].second() }.setNegativeButton("取消",null).show()
+    }
     private fun settingsScreen() {
         screen("settings","设置")
-        val videoSettings=section("视频源")
-        videoSettings.addView(text("电影、电视剧 · CMS JSON 来源",14f).apply {setTextColor(secondaryColor)})
-        button("影视来源",videoSettings) { login() }
-        button("扫码添加视频源",videoSettings) {
-            startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),412)
-        }
-        val liveSettings=section("直播源")
-        liveSettings.addView(text("电视频道 · M3U 播放列表",14f).apply {setTextColor(secondaryColor)})
-        button("直播订阅",liveSettings) { liveSourcesScreen() }
-        button("扫码添加直播源",liveSettings) {
-            startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),413)
-        }
-        val homeSettings=section("首页")
-        val showRecommendations=CheckBox(this).apply {text="显示推荐片单";setTextColor(Color.WHITE);isChecked=recommendations.enabled();homeSettings.addView(this)}
-        showRecommendations.setOnCheckedChangeListener { _,enabled -> recommendations.setEnabled(enabled) }
-        val playback=section("播放与应用")
-        button("投屏设备",playback) { chooseDevice() }
-        if(queue!=null) button("投屏控制 · $castTitle",playback) { controls() }
-        button("检查更新",playback) { startActivity(android.content.Intent(this,UpdateActivity::class.java)) }
+        val sourcesBox=section("内容来源")
+        setting(sourcesBox,"影视来源","电影、电视剧") {login()}
+        setting(sourcesBox,"直播订阅","电视频道") {liveSourcesScreen()}
+        val playback=section("播放与显示")
+        Switch(this).apply {text="首页推荐";setTextColor(Color.WHITE);setPadding(dp(4),dp(12),dp(4),dp(12));isChecked=recommendations.enabled();playback.addView(this);setOnCheckedChangeListener {_,enabled->recommendations.setEnabled(enabled)}}
+        setting(playback,"投屏设备",device?.name ?: "选择接收设备") {chooseDevice()}
+        if(queue!=null) setting(playback,"投屏控制",castTitle) {controls()}
+        val app=section("应用")
+        setting(app,"检查更新",BuildConfig.VERSION_NAME) {startActivity(android.content.Intent(this,UpdateActivity::class.java))}
+        setting(app,"关于片刻") {PiankeUi.about(this)}
         content.addView(text("来源、收藏和观看记录保存在这台设备上。",13f).apply {setTextColor(secondaryColor);setPadding(dp(3),dp(18),0,0)})
     }
     private fun editLiveSubscription(entry: JSONObject?=null, scanned: String?=null) {
@@ -534,25 +547,26 @@ class PhoneActivity : Activity() {
         val row=buttonRow(imports)
         rowButton(row,"扫码添加") {startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),413)}
         rowButton(row,"导入 M3U 文件") {startActivityForResult(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(android.content.Intent.CATEGORY_OPENABLE),414)}
-        val automatic=CheckBox(this).apply {text="自动更新频道";setTextColor(Color.WHITE);isChecked=liveRepository.automatic();imports.addView(this)}
+        val automatic=Switch(this).apply {text="自动更新频道";setTextColor(Color.WHITE);isChecked=liveRepository.automatic();imports.addView(this)}
         automatic.setOnCheckedChangeListener { _,checked->liveRepository.setAutomatic(checked) }
         val interval=if(liveRepository.interval()>=24*60*60*1000L) "每天" else "每6小时"
-        button("检查频率 · $interval",imports) {
+        setting(imports,"检查频率",interval) {
             dialog=AlertDialog.Builder(this).setTitle("进入直播时检查更新").setSingleChoiceItems(arrayOf("每6小时","每天"),if(liveRepository.interval()>=24*60*60*1000L)1 else 0) { d,which ->liveRepository.setInterval((if(which==0)6L else 24L)*60*60*1000);d.dismiss();liveSourcesScreen()}.setNegativeButton("取消",null).show()
         }
         val all=liveRepository.subscriptions()
         if(all.length()==0) content.addView(text("还没有直播订阅，添加后即可获取频道。",14f))
         for(i in 0 until all.length()) {
-            val entry=all.getJSONObject(i);val box=section(entry.optString("name"))
-            val enabled=CheckBox(this).apply {text="启用此订阅";setTextColor(Color.WHITE);isChecked=entry.optBoolean("enabled",true);box.addView(this)}
-            enabled.setOnCheckedChangeListener { _,checked ->liveRepository.enable(entry.getString("id"),checked) }
+            val entry=all.getJSONObject(i);val box=section();val row=buttonRow(box).apply {gravity=Gravity.CENTER_VERTICAL}
+            Switch(this).apply {text=entry.optString("name");setTextColor(Color.WHITE);isChecked=entry.optBoolean("enabled",true);row.addView(this,LinearLayout.LayoutParams(0,-2,1f));setOnCheckedChangeListener {_,checked->liveRepository.enable(entry.getString("id"),checked)}}
+            button("⋮",row) {
+                val actions=mutableListOf<Pair<String,()->Unit>>()
+                if(entry.optString("url").isNotEmpty()) actions.add("编辑订阅" to {editLiveSubscription(entry)})
+                actions.add("删除订阅" to {dialog=AlertDialog.Builder(this).setMessage("删除这个直播订阅？下次打开不会自动补回。")
+                    .setNegativeButton("取消",null).setPositiveButton("删除") {_,_->liveRepository.remove(entry.getString("id"));liveSourcesScreen()}.show()})
+                libraryMenu(entry.optString("name"),actions)
+            }.apply {contentDescription="订阅管理 · "+entry.optString("name");layoutParams=LinearLayout.LayoutParams(dp(48),dp(48))}
             val updated=liveRepository.prefs.getLong("updated-"+entry.getString("id"),0)
             box.addView(text(if(entry.optString("url").isEmpty()) "本地文件 · 重新导入同名文件可更新" else if(updated>0) "上次更新 · "+android.text.format.DateFormat.format("MM-dd HH:mm",updated) else "首次进入直播时更新",13f).apply {setTextColor(secondaryColor)})
-            if(entry.optString("url").isNotEmpty())button("编辑订阅",box) {editLiveSubscription(entry)}
-            button("删除订阅 · ${entry.optString("name")}",box) {
-                dialog=AlertDialog.Builder(this).setMessage("删除这个直播订阅？下次打开不会自动补回。")
-                    .setNegativeButton("取消",null).setPositiveButton("删除") { _,_->liveRepository.remove(entry.getString("id"));liveSourcesScreen()}.show()
-            }
         }
         button("查看直播频道") {liveScreen()}
     }
@@ -714,7 +728,7 @@ class PhoneActivity : Activity() {
     private fun details() {
         screen("detail", "影片详情")
         val navigation = buttonRow(content)
-        rowButton(navigation, "返回选片") { home() }
+        rowButton(navigation, "返回选片") { home() }.apply {background=surface(Color.TRANSPARENT);setTextColor(secondaryColor);gravity=Gravity.START or Gravity.CENTER_VERTICAL}
         if(query.isNotEmpty()) rowButton(navigation, "搜索结果") { searchScreen() }
         if(queue != null) rowButton(navigation, "投屏控制") { controls() }
         val info = section()
@@ -722,7 +736,12 @@ class PhoneActivity : Activity() {
         val favoriteEntries = client.local.favorites("/api/favorites",null,"GET").optJSONArray("items") ?: JSONArray()
         val favoriteId=(0 until favoriteEntries.length()).map { favoriteEntries.getJSONObject(it) }
             .firstOrNull { it.optJSONObject("source")?.optString("url")==source.optString("url") && it.optJSONObject("item")?.optString("vodId")==selected.optString("vodId") }?.optString("id")
-        button(if(favoriteId==null) "加入本机收藏" else "取消收藏", info) {
+        val saved=PlaybackStore(this@PhoneActivity).find(source,selected)
+        val resumeIndex=saved?.optInt("index")?.takeIf {it in 0 until episodes.length()} ?: 0
+        if(saved!=null) {info.addView(text(PiankeUi.position(saved),14f));PiankeUi.progress(info,saved)}
+        button(if(saved==null) "开始观看" else "继续播放 · 第 ${resumeIndex+1} 集",info,true) {playLocal(resumeIndex)}
+        val secondary=buttonRow(info)
+        rowButton(secondary,if(favoriteId==null) "收藏" else "取消收藏") {
             work("正在保存收藏…") {
                 withContext(Dispatchers.IO) {
                     if(favoriteId==null) client.local.favorites("/api/favorites",JSONObject().put("source",source).put("item",selected),"POST")
@@ -732,7 +751,7 @@ class PhoneActivity : Activity() {
             }
         }
         val listed = PlaybackStore(this@PhoneActivity).contains(source,selected)
-        button(if(listed) "移出播放列表" else "加入播放列表",info) {
+        rowButton(secondary,if(listed) "移出片单" else "加入片单") {
             work("正在保存播放列表…") {
                 withContext(Dispatchers.IO) {
                     val store = PlaybackStore(this@PhoneActivity)
@@ -741,13 +760,9 @@ class PhoneActivity : Activity() {
                 details(); notice.text = if(listed) "已移出播放列表，观看进度保留" else "已加入播放列表"
             }
         }
-        val saved=PlaybackStore(this@PhoneActivity).find(source,selected)
-        if(saved!=null && saved.optInt("index") in 0 until episodes.length()) {
-            val index=saved.optInt("index")
-            info.addView(text("上次看到第 ${index+1} 集 · ${clock(saved.optLong("position"))} / ${clock(saved.optLong("duration"))}",14f))
-            button("继续播放 · 第 ${index+1} 集", info, true) { playLocal(index) }
-        }
-        val target = section(); deviceButton(target)
+        rowButton(secondary,"投屏") {if(device==null)chooseDevice {cast(resumeIndex)} else cast(resumeIndex)}
+        val desc=detailInfo.optString("desc")
+        if(desc.isNotBlank()) info.addView(text(android.text.Html.fromHtml(desc).toString(),14f).apply {maxLines=4;setTextColor(secondaryColor)})
         val box = section("选择剧集 · 共 ${episodes.length()} 集")
         val columns = if(resources.configuration.fontScale > 1.3f) 2 else 3
         for(start in 0 until episodes.length() step columns) {
@@ -757,7 +772,7 @@ class PhoneActivity : Activity() {
                     if(which==0) playLocal(i)
                     else if(device == null) chooseDevice { cast(i) } else cast(i)
                 }.show()
-            }
+            }.apply {if(saved!=null && i==resumeIndex) {background=surface(accentColor,12);setTextColor(backgroundColor)}}
             repeat(maxOf(0, start + columns - episodes.length())) { row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) }
         }
     }
@@ -768,68 +783,89 @@ class PhoneActivity : Activity() {
             .putStringArrayListExtra("episodes",ArrayList(urls)).putExtra("index",index).putExtra("title",title)
             .putExtra("source",source.toString()).putExtra("item",selected.toString()))
     }
-    private fun historyScreen() {
-        screen("history","观看历史")
-        val navigation=buttonRow(content)
-        rowButton(navigation,"本机收藏夹") { favorites() }
-        rowButton(navigation,"播放列表") { playlistScreen() }
-        val history=PlaybackStore(this@PhoneActivity).all()
-        if(history.length()==0) content.addView(text("还没有观看记录"))
-        for(i in 0 until history.length()) {
-            val entry=history.getJSONObject(i)
-            button("${entry.optString("title")} · 第 ${entry.optInt("index")+1} 集 · ${clock(entry.optLong("position"))}") {
-                detail(JSONObject(entry.getJSONObject("item").toString()).put("favoriteSource",entry.getJSONObject("source")))
-            }
+    private fun watchingRow(entry: JSONObject, saved: JSONObject?, action: () -> Unit, menu: (() -> Unit)? = null) {
+        val item=entry.getJSONObject("item")
+        val card=section(); val row=buttonRow(card).apply {gravity=Gravity.CENTER_VERTICAL}
+        poster(row,item.optString("pic"),dp(76),dp(108))
+        val copy=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(12),0,dp(8),0)}
+        row.addView(copy,LinearLayout.LayoutParams(0,-2,1f))
+        copy.addView(text(entry.optString("title",item.optString("name")),18f).apply {maxLines=2;setTypeface(typeface,Typeface.BOLD)})
+        copy.addView(text(PiankeUi.position(saved),13f).apply {setTextColor(secondaryColor)})
+        PiankeUi.progress(copy,saved)
+        button("▶",row,true,action).apply {contentDescription="播放 · "+entry.optString("title",item.optString("name"));layoutParams=LinearLayout.LayoutParams(dp(48),dp(48))}
+        card.isClickable=true;card.isFocusable=true;card.setOnClickListener {if(!busy)action()}
+        if(menu!=null) {
+            button("⋮",row) {menu()}.apply {contentDescription="管理 · "+entry.optString("title",item.optString("name"));layoutParams=LinearLayout.LayoutParams(dp(40),dp(48))}
+            card.setOnLongClickListener {menu();true}
         }
-        if(history.length()>0) button("清空观看历史") {
+    }
+    private fun historyScreen() {
+        screen("history","观看历史");libraryTabs("历史")
+        val history=PlaybackStore(this@PhoneActivity).all()
+        if(history.length()==0) {val empty=section("还没有观看记录");empty.addView(text("找一部喜欢的，留给这一刻。",14f));button("去搜索",empty,true){searchLanding()};return}
+        val heading=content.getChildAt(0);content.removeView(heading)
+        val titleRow=LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
+        titleRow.addView(heading,LinearLayout.LayoutParams(0,-2,1f));content.addView(titleRow,0)
+        button("管理",titleRow) {
             dialog=AlertDialog.Builder(this).setMessage("清空历史列表？收藏、来源和播放列表中的进度会保留。")
-                .setNegativeButton("取消",null).setPositiveButton("清空") { _,_ -> PlaybackStore(this@PhoneActivity).clear(); historyScreen() }.show()
+                .setNegativeButton("取消",null).setPositiveButton("清空") {_,_->PlaybackStore(this@PhoneActivity).clear();historyScreen()}.show()
+        }.apply {textSize=14f;setTextColor(secondaryColor);background=surface(Color.TRANSPARENT);layoutParams=LinearLayout.LayoutParams(dp(66),dp(44))}
+        val first=history.getJSONObject(0);val item=first.getJSONObject("item")
+        val hero=section("接着看")
+        val art=FrameLayout(this).apply {background=surface();clipToOutline=true}
+        hero.addView(art,LinearLayout.LayoutParams(-1,dp(170)))
+        ImageView(this).apply {scaleType=ImageView.ScaleType.CENTER_CROP;art.addView(this,FrameLayout.LayoutParams(-1,-1));posters.load(this,client,item.optString("pic"))}
+        val copy=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(12),dp(12),dp(12),dp(12));background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(0x00101723,0xee101723.toInt()))}
+        art.addView(copy,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
+        copy.addView(text(first.optString("title"),21f).apply {setTypeface(typeface,Typeface.BOLD)})
+        copy.addView(text(PiankeUi.position(first),13f));PiankeUi.progress(hero,first)
+        button("继续观看",hero,true) {detail(JSONObject(item.toString()).put("favoriteSource",first.getJSONObject("source")),true)}
+        var group=""
+        for(i in 1 until history.length()) {
+            val entry=history.getJSONObject(i);val date=entry.optLong("updatedAt")
+            val label=when {date<=0 -> "更早"; android.text.format.DateUtils.isToday(date)->"今天"; android.text.format.DateUtils.isToday(date+24*60*60*1000L)->"昨天";else->"更早"}
+            if(label!=group){content.addView(text(label,16f).apply {setTextColor(secondaryColor);setPadding(0,dp(18),0,0)});group=label}
+            watchingRow(entry,entry,{detail(JSONObject(entry.getJSONObject("item").toString()).put("favoriteSource",entry.getJSONObject("source")),true)})
         }
     }
     private fun playlistScreen() {
-        screen("playlist","播放列表"); button("返回选片") { home() }
-        content.addView(text("仅保存在本机 · 开始播放后自动加入，也可在详情页手动添加。移除条目会保留观看历史。",14f))
-        val store = PlaybackStore(this@PhoneActivity); val entries = store.playlist()
-        if(entries.length()==0) content.addView(text("播放列表为空，先搜索一部想看的影片吧"))
+        screen("playlist","我的片单");libraryTabs("片单")
+        val store=PlaybackStore(this@PhoneActivity);val entries=store.playlist()
+        if(entries.length()==0) {content.addView(text("片单还是空的，去找一部想看的吧。",15f));button("去搜索",primary=true){searchLanding()}}
         for(i in 0 until entries.length()) {
-            val entry=entries.getJSONObject(i); val item=entry.getJSONObject("item"); val src=entry.getJSONObject("source")
-            val saved=store.find(src,item); val name=entry.optString("title",item.optString("name"))
-            val box=section()
-            hero(box,name,item.optString("pic"),src.optString("name"))
-            box.addView(text(if(saved==null) "尚未播放" else "上次看到第 ${saved.optInt("index")+1} 集 · ${clock(saved.optLong("position"))} / ${clock(saved.optLong("duration"))}",14f))
-            fun queuedItem() = JSONObject(item.toString()).put("favoriteSource",src)
-            button(if(saved==null) "开始播放 · $name" else "继续播放 · $name",box,true) { detail(queuedItem(),true) }
-            button("查看剧集 · $name",box) { detail(queuedItem()) }
-            button("移出列表 · $name",box) {
-                work("正在移除…") { withContext(Dispatchers.IO) { store.remove(entry.getString("id")) }; playlistScreen() }
-            }
+            val entry=entries.getJSONObject(i);val item=entry.getJSONObject("item");val src=entry.getJSONObject("source");val saved=store.find(src,item)
+            fun queued()=JSONObject(item.toString()).put("favoriteSource",src)
+            watchingRow(entry,saved,{detail(queued(),true)},{
+                libraryMenu(entry.optString("title"),listOf("查看剧集" to {detail(queued())},"移出列表" to {
+                    dialog=AlertDialog.Builder(this).setMessage("移出片单？观看历史和进度会保留。")
+                        .setNegativeButton("取消",null).setPositiveButton("移出") {_,_->work("正在移除…"){withContext(Dispatchers.IO){store.remove(entry.getString("id"))};playlistScreen()}}.show()
+                }))
+            })
         }
+    }
+    private fun favoriteMenu(entry: JSONObject) {
+        val item=entry.getJSONObject("item");val src=entry.getJSONObject("source")
+        libraryMenu(item.optString("name"),listOf("加入播放列表" to {
+            work("正在保存…"){withContext(Dispatchers.IO){PlaybackStore(this@PhoneActivity).add(src,item,item.optString("name"))};notice.text="已加入播放列表"}
+        },"移除收藏" to {
+            dialog=AlertDialog.Builder(this).setMessage("移除这个收藏？观看进度会保留。")
+                .setNegativeButton("取消",null).setPositiveButton("移除") {_,_->work("正在移除…"){withContext(Dispatchers.IO){client.local.favorites("/api/favorites/${entry.getString("id")}",null,"DELETE")};favorites()}}.show()
+        }))
     }
     private fun favorites() {
         try {
-            val items = client.local.favorites("/api/favorites",null,"GET").optJSONArray("items") ?: JSONArray()
-            screen("favorites","本机收藏夹"); button("返回选片") { home() }
-            content.addView(text("收藏仅保存在本机，无需 NAS、账号或服务器。",14f))
-            val box = section("${items.length()} 部收藏")
-            val entries = (0 until items.length()).map { i ->
-                val entry = items.getJSONObject(i); val item = JSONObject(entry.getJSONObject("item").toString())
+            val items=client.local.favorites("/api/favorites",null,"GET").optJSONArray("items") ?: JSONArray()
+            screen("favorites","我的收藏");libraryTabs("收藏")
+            val box=section("${items.length()} 部收藏")
+            val entries=(0 until items.length()).map {i->
+                val entry=items.getJSONObject(i);val item=JSONObject(entry.getJSONObject("item").toString())
                 val saved=PlaybackStore(this@PhoneActivity).find(entry.getJSONObject("source"),item)
-                if(saved!=null) item.put("remarks","第 ${saved.optInt("index")+1} 集 · ${clock(saved.optLong("position"))}")
-                item.put("favoriteSource",entry.getJSONObject("source"))
+                item.put("remarks",if(saved==null) "" else PiankeUi.position(saved))
+                item.put("favoriteSource",entry.getJSONObject("source")).put("favoriteEntry",entry)
             }
-            posterGrid(entries, box)
-            for(i in 0 until items.length()) {
-                val entry=items.getJSONObject(i); val item=entry.getJSONObject("item"); val src=entry.getJSONObject("source")
-                val name=item.optString("name")
-                button("加入播放列表 · $name") {
-                    work("正在保存播放列表…") { withContext(Dispatchers.IO) { PlaybackStore(this@PhoneActivity).add(src,item,name) }; notice.text="已加入播放列表" }
-                }
-                button("移除收藏 · $name") {
-                    work("正在移除收藏…") { withContext(Dispatchers.IO) { client.local.favorites("/api/favorites/${entry.getString("id")}",null,"DELETE") }; favorites() }
-                }
-            }
-            if(items.length()==0) notice.text = "暂无收藏，在影片详情页点击加入本机收藏"
-        } catch(e: Exception) { notice.text = e.message ?: "本机收藏读取失败" }
+            posterGrid(entries,box)
+            if(items.length()==0) box.addView(text("喜欢的影片，点一下收藏就会出现在这里。",15f))
+        } catch(e: Exception) {notice.text=e.message ?: "收藏读取失败"}
     }
     private fun chooseDevice(after: (() -> Unit)? = null) {
         work("正在搜索局域网设备（约 8 秒）…") {
@@ -1046,7 +1082,7 @@ class PhoneActivity : Activity() {
         rowButton(switch, "上一集", q.adjacent(-1) != null) { adjacent(-1) }
         rowButton(switch, "下一集", q.adjacent(1) != null) { adjacent(1) }
         button("查看选集", info) { queueDetails() }
-        button("批量加入投屏列表", info, true) { batchScreen() }
+
         val actions = section("播放与音量")
         fun command(row: LinearLayout, label: String, action: suspend () -> Boolean) = rowButton(row, label, attached) {
             work("正在发送控制指令…") {
@@ -1082,6 +1118,7 @@ class PhoneActivity : Activity() {
                 else notice.text = "未能停止设备，请先确认投屏仍在连接"
             }
         }.isEnabled = attached
+        setting(content,"批量加入投屏列表","仅部分接收设备支持") {batchScreen()}
         button("返回选片（保留投屏）") { home() }
         content.addView(text("切到其他 App 或锁屏不会停止当前视频。手机显示最近发送的集数；若投屏设备支持自定义 DLNA 播放列表，可通过设备或配套 App 管理，不支持时使用单集投屏即可。", 13f).apply { setTextColor(secondaryColor) })
         if(attached) startPolling() else {

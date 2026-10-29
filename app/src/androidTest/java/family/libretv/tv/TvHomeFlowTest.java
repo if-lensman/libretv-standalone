@@ -61,8 +61,8 @@ public final class TvHomeFlowTest extends TestCase {
     public void testMoreCategoriesHistoryAndSettingsUseSharedRepositories()throws Exception{
         new PlaybackStore(context).save(source(),item(),"History fixture",0,5000,30000);launch();
         click("more");assertEquals("more",field(home,"page"));click("category-tv");assertEquals("tv",field(home,"category"));assertTrue(((Map)field(home,"targets")).containsKey("film-23"));
-        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrument.waitForIdleSync();assertEquals("home",field(home,"page"));click("nav-history");assertTrue(texts(home).stream().anyMatch(t->t.contains("History fixture")));click("back-home");
-        click("nav-settings");child=awaitActivity(MainActivity.class);List<View> boxes=new ArrayList<>();instrument.runOnMainSync(()->findBoxes(child.getWindow().getDecorView(),boxes));assertFalse(boxes.isEmpty());instrument.runOnMainSync(boxes.get(0)::performClick);assertFalse(new RecommendationRepository(context).enabled());
+        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrument.waitForIdleSync();assertEquals("home",field(home,"page"));click("nav-history");assertTrue(texts(home).stream().anyMatch(t->t.contains("History fixture")));click("nav-home");
+        click("nav-settings");child=awaitActivity(MainActivity.class);instrument.runOnMainSync(()->{List<View> all=new ArrayList<>();collectViews(child.getWindow().getDecorView(),all);for(View v:all)if(v instanceof Button&&"播放与显示".contentEquals(((Button)v).getText()))v.performClick();});List<View> boxes=new ArrayList<>();instrument.runOnMainSync(()->findBoxes(child.getWindow().getDecorView(),boxes));assertFalse(boxes.isEmpty());instrument.runOnMainSync(boxes.get(0)::performClick);assertFalse(new RecommendationRepository(context).enabled());
         instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);awaitActivity(TvHomeActivity.class);child=null;assertTrue(texts(home).stream().anyMatch(t->t.contains("推荐已关闭")));
     }
     public void testFailedRefreshRetainsSharedCacheAndRemoteFocus()throws Exception{
@@ -77,5 +77,6 @@ public final class TvHomeFlowTest extends TestCase {
         context.getSharedPreferences("recommendations",0).edit().clear().putBoolean("enabled",false).commit();launch();assertTrue(texts(home).contains("今晚，想看点什么？"));assertTrue(texts(home).stream().anyMatch(t->t.contains("推荐已关闭")));
         click("hero");child=awaitActivity(MainActivity.class);assertEquals("",field(child,"query"));assertEquals("search",child.getIntent().getStringExtra("tvDestination"));
     }
-    private void findBoxes(View v,List<View> out){if(v instanceof CheckBox&&"显示首页推荐".contentEquals(((CheckBox)v).getText()))out.add(v);if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++)findBoxes(((ViewGroup)v).getChildAt(i),out);}
+    private void collectViews(View v,List<View> all){all.add(v);if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++)collectViews(((ViewGroup)v).getChildAt(i),all);}
+    private void findBoxes(View v,List<View> out){if(v instanceof Switch&&"首页推荐".contentEquals(((Switch)v).getText()))out.add(v);if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++)findBoxes(((ViewGroup)v).getChildAt(i),out);}
 }

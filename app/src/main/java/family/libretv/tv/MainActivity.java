@@ -12,6 +12,7 @@ import android.text.InputType;
 import android.view.*;
 import android.view.inputmethod.InputMethodManager;
 import android.content.Context;
+import android.content.Intent;
 import android.widget.*;
 import androidx.media3.common.*;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -143,8 +144,18 @@ public final class MainActivity extends Activity {
         main.removeCallbacks(hidePlayerControls);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN);
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(40), dp(18), dp(40), dp(18)); root.setBackgroundColor(Color.rgb(16, 25, 34));
-        root.addView(label(heading, 25));
+        root.setPadding(dp(40), dp(18), dp(40), dp(18)); root.setBackgroundColor(PiankeUi.BACKGROUND);
+        LinearLayout navigation=row();navigation.setGravity(Gravity.CENTER_VERTICAL);root.addView(navigation);
+        navigation.addView(PiankeUi.brand(this,96,50));
+        button(navigation,"首页",()->{startActivity(new Intent(this,TvHomeActivity.class));finish();});
+        button(navigation,"搜索",this::showSearch);
+        button(navigation,"直播",()->startActivity(new Intent(this,LiveBrowseActivity.class)));
+        button(navigation,"收藏",this::showFavorites);
+        button(navigation,"历史",()->startActivity(new Intent(this,TvHomeActivity.class).putExtra("page","history")));
+        button(navigation,"设置",this::showSettings);
+        String active=next==Screen.SETTINGS||next==Screen.CONFIG||next==Screen.PAIRING?"设置":next==Screen.FAVORITES?"收藏":next==Screen.PLAYLIST?"历史":"搜索";
+        for(int i=0;i<navigation.getChildCount();i++)if(navigation.getChildAt(i) instanceof Button){Button nav=(Button)navigation.getChildAt(i);nav.setContentDescription("顶部导航 · "+nav.getText());if(active.contentEquals(nav.getText()))nav.setBackground(PiankeUi.focus(this,true));}
+        root.addView(label(heading.replace("片刻   /   ","").replace("片刻 · ",""), 24));
         message = label("", 15); message.setVisibility(View.GONE);
         message.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); root.addView(message);
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
@@ -212,7 +223,7 @@ public final class MainActivity extends Activity {
         setNotice("操作失败：" + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()));
     }
     private void showConfig() {
-        page(Screen.CONFIG, "LibreTV · 来源配置");
+        page(Screen.CONFIG, "片刻 · 来源配置");
         content.addView(label("独立运行，无需 NAS。默认源可删除；支持粘贴订阅地址或 JSON。",17));
         EditText value=input(content,"订阅地址或 JSON","",InputType.TYPE_CLASS_TEXT);
         value.setSingleLine(false);
@@ -239,7 +250,7 @@ public final class MainActivity extends Activity {
         }catch(Exception e){setNotice(e.getMessage());}
     }
     private void showLogin() {
-        page(Screen.LOGIN, "LibreTV · 登录 NAS");
+        page(Screen.LOGIN, "片刻 · 登录 NAS");
         content.addView(label(client.origin.toString(), 17));
         EditText password = input(content, "NAS 访问密码（不保存）", "", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         Button login = button(content, "登录", () -> {
@@ -269,7 +280,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showSearch() {
-        page(Screen.SEARCH, "LibreTV   /   独立影院");
+        page(Screen.SEARCH, "片刻   /   独立影院");
         root.removeViewAt(root.getChildCount() - 1);
         content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL);
         root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -414,23 +425,39 @@ public final class MainActivity extends Activity {
             client.local.saveSources(sources);
         } catch(Exception e) { error(e); }
     }
+    private int settingsSection;
     private void showSettings() {
-        page(Screen.SETTINGS,"LibreTV · 来源设置");
-        button(content,"返回选片",this::homeOrSearch);
-        RecommendationRepository recommendations=new RecommendationRepository(this);
-        CheckBox showRecommendations=new CheckBox(this);showRecommendations.setText("显示首页推荐");showRecommendations.setTextColor(Color.WHITE);showRecommendations.setChecked(recommendations.enabled());content.addView(showRecommendations);
-        showRecommendations.setOnCheckedChangeListener((v,checked)->recommendations.setEnabled(checked));
-        button(content,"添加来源 / 扫码导入",this::showConfig);
-        button(content,"检查更新",()->startActivity(new android.content.Intent(this,UpdateActivity.class)));
-        content.addView(label("共 "+sources.length()+" 个来源，收藏只保存在本机。",17));
+        page(Screen.SETTINGS,"设置");
+        LinearLayout layout=row();layout.setPadding(0,dp(12),0,0);content.addView(layout);
+        LinearLayout menu=new LinearLayout(this);menu.setOrientation(LinearLayout.VERTICAL);layout.addView(menu,new LinearLayout.LayoutParams(dp(205),-2));
+        Button[] selectedSection=new Button[1];
+        String[] sections={"内容来源","播放与显示","应用"};
+        for(int i=0;i<sections.length;i++){final int index=i;Button entry=button(menu,sections[i],()->{settingsSection=index;showSettings();});if(i==settingsSection){entry.setBackground(PiankeUi.focus(this,true));selectedSection[0]=entry;}}
+        LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(dp(24),dp(8),dp(12),dp(12));layout.addView(panel,new LinearLayout.LayoutParams(0,-2,1));
+        if(settingsSection==0){
+            PiankeUi.entry(panel,"视频来源",sources.length()+" 个来源 · 电影、电视剧",this::showVideoSources);
+            PiankeUi.entry(panel,"直播订阅","电视频道 · M3U",()->startActivity(new Intent(this,LiveBrowseActivity.class).putExtra("openSources",true)));
+        }else if(settingsSection==1){
+            RecommendationRepository recommendations=new RecommendationRepository(this);Switch enabled=new Switch(this);enabled.setText("首页推荐");enabled.setTextSize(19);enabled.setTextColor(Color.WHITE);enabled.setPadding(dp(16),dp(16),dp(16),dp(16));enabled.setChecked(recommendations.enabled());panel.addView(enabled);enabled.setOnCheckedChangeListener((v,on)->recommendations.setEnabled(on));
+            panel.addView(label("方向键选择，确认执行。播放页隐藏控制时，按方向键唤出操作；直播左右键静默切台。",16));
+        }else{
+            panel.addView(PiankeUi.brand(this,144,76));panel.addView(label(PiankeUi.SLOGAN,17));
+            PiankeUi.entry(panel,"检查更新",BuildConfig.VERSION_NAME,()->startActivity(new Intent(this,UpdateActivity.class)));
+            PiankeUi.entry(panel,"关于片刻","原生影音客户端",()->PiankeUi.about(this));
+        }
+        if(selectedSection[0]!=null)selectedSection[0].requestFocus();
+    }
+    private void showVideoSources(){
+        page(Screen.SETTINGS,"视频来源");button(content,"‹ 返回设置",this::showSettings);button(content,"添加来源 / 扫码导入",this::showConfig);
+        if(sources.length()==0)content.addView(label("还没有视频来源。添加后即可搜索影片。",18));
         for(int i=0;i<sources.length();i++){
             JSONObject source=sources.optJSONObject(i);String key=source.optString("key");
-            CheckBox choice=new CheckBox(this);choice.setText(source.optString("name"));choice.setTextColor(Color.WHITE);choice.setChecked(enabledSources.contains(key));
-            choice.setOnCheckedChangeListener((v,on)->{if(on)enabledSources.add(key);else enabledSources.remove(key);saveSourceSelection();});content.addView(choice);
-            button(content,"删除 · "+source.optString("name"),()->new android.app.AlertDialog.Builder(this).setMessage("删除后不会在重启时补回，是否删除？")
-                .setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->task("正在删除…",()->{client.local.removeSource(key);return client.local.sources();},list->{sources=list;results=new JSONArray();loadSourceSelection();showSettings();})).show());
+            LinearLayout panel=row();panel.setGravity(Gravity.CENTER_VERTICAL);panel.setPadding(dp(16),dp(8),dp(16),dp(8));panel.setBackground(PiankeUi.surface(this,PiankeUi.PANEL,12));LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,-2);pp.topMargin=dp(10);content.addView(panel,pp);
+            Switch choice=new Switch(this);choice.setText(source.optString("name"));choice.setTextColor(Color.WHITE);choice.setTextSize(18);choice.setChecked(enabledSources.contains(key));panel.addView(choice,new LinearLayout.LayoutParams(0,-2,1));
+            choice.setOnCheckedChangeListener((v,on)->{if(on)enabledSources.add(key);else enabledSources.remove(key);saveSourceSelection();});
+            button(panel,"更多",()->new android.app.AlertDialog.Builder(this).setTitle(source.optString("name")).setItems(new String[]{"删除来源"},(d,w)->new android.app.AlertDialog.Builder(this).setMessage("删除后不会在重启时补回，是否删除？")
+                .setNegativeButton("取消",null).setPositiveButton("删除",(dialog,which)->task("正在删除…",()->{client.local.removeSource(key);return client.local.sources();},list->{sources=list;results=new JSONArray();loadSourceSelection();showVideoSources();})).show()).setNegativeButton("取消",null).show());
         }
-        content.addView(label("版本 "+BuildConfig.VERSION_NAME+" · 独立测试版",16));
     }
     private void addPhonePairingButton() {
         Button scan = button(content, "手机扫码配置 NAS", () -> showPairing(0));
@@ -450,7 +477,7 @@ public final class MainActivity extends Activity {
     }
     private void showPairing(int addressIndex) {
         if (screen != Screen.PAIRING) pairingReturn = screen;
-        page(Screen.PAIRING, "LibreTV   /   手机扫码配置");
+        page(Screen.PAIRING, "片刻   /   手机扫码配置");
         content.addView(label("手机与电视连接同一网络，扫码填写 NAS 地址和密码。", 18));
         try {
             List<String> addresses = PhonePairingServer.localAddresses();
@@ -527,7 +554,7 @@ public final class MainActivity extends Activity {
             AppUpdater.validateApk(this, pendingUpdate, pendingUpdateCode);
             if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
                 new android.app.AlertDialog.Builder(this).setTitle("允许安装应用更新")
-                        .setMessage("请在接下来的系统页面允许 LibreTV 安装应用，然后返回继续安装。")
+                        .setMessage("请在接下来的系统页面允许 片刻 安装应用，然后返回继续安装。")
                         .setNegativeButton("稍后", null).setPositiveButton("前往设置", (d, w) -> {
                             try { startActivityForResult(new android.content.Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                                 android.net.Uri.parse("package:" + getPackageName())), 901); }
@@ -624,7 +651,7 @@ public final class MainActivity extends Activity {
     }
     @SuppressWarnings("deprecation")
     private void showDetail() {
-        page(Screen.DETAIL, "LibreTV   /   影片详情");
+        page(Screen.DETAIL, "片刻   /   影片详情");
         button(content, detailReturn==Screen.PLAYLIST?"‹ 返回播放列表":detailReturn==Screen.FAVORITES?"‹ 返回本机收藏夹":"‹ 返回搜索结果 / 选择其他来源", this::returnFromDetail);
         LinearLayout hero = row(); hero.setPadding(dp(4), dp(16), dp(4), dp(20)); content.addView(hero);
         ImageView cover = new ImageView(this); cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -637,23 +664,18 @@ public final class MainActivity extends Activity {
         String summary = detailInfo.optString("year") + "  " + detailInfo.optString("area") + "  " + detailInfo.optString("typeName");
         if (!summary.trim().isEmpty()) info.addView(label(summary.trim(), 16));
         TextView source = label(selected.optString("sourceName") + "   ·   共 " + episodes.length() + " 集", 16);
-        source.setTextColor(Color.rgb(107, 226, 195)); info.addView(source);
+        source.setTextColor(PiankeUi.PINK); info.addView(source);
         TextView description = label("", 16); description.setMaxLines(3);
         String desc = detailInfo.optString("desc");
         description.setText(desc.isEmpty() ? "选好剧集，开始观看。" : Html.fromHtml(desc));
         description.setTextColor(Color.rgb(175, 190, 207)); info.addView(description);
-        favoriteButton=button(content,"正在读取收藏状态…",()->toggleFavorite());favoriteButton.setEnabled(false);
-        readFavoriteState();
-        PlaybackStore store=new PlaybackStore(this);
-        JSONObject saved=store.find(detailSource,selected);
-        if(saved!=null && saved.optInt("index")>=0 && saved.optInt("index")<episodes.length()) {
-            int savedIndex=saved.optInt("index");
-            button(content,"继续播放 · 第 "+(savedIndex+1)+" 集 · "+time(saved.optLong("position")),()->preparePlayback(savedIndex));
-        }
+        PlaybackStore store=new PlaybackStore(this);JSONObject saved=store.find(detailSource,selected);
+        int resumeIndex=saved!=null&&saved.optInt("index")>=0&&saved.optInt("index")<episodes.length()?saved.optInt("index"):0;
+        if(saved!=null){info.addView(label(PiankeUi.position(saved),15));PiankeUi.progress(info,saved);}
+        LinearLayout actions=row();info.addView(actions);Button primary=button(actions,saved==null?"开始观看":"继续播放",()->preparePlayback(resumeIndex));primary.setBackground(PiankeUi.focus(this,true));
+        favoriteButton=button(actions,"正在读取收藏状态…",()->toggleFavorite());favoriteButton.setEnabled(false);readFavoriteState();
         boolean listed=store.contains(detailSource,selected);
-        button(content,listed?"移出播放列表":"加入播放列表",()->task("正在保存播放列表",()->{
-            if(listed)store.remove(PlaybackStore.identity(detailSource,selected));else store.add(detailSource,selected,title);return true;
-        },ok->showDetail()));
+        button(actions,listed?"移出片单":"加入片单",()->task("正在保存片单",()->{if(listed)store.remove(PlaybackStore.identity(detailSource,selected));else store.add(detailSource,selected,title);return true;},ok->showDetail()));
         content.addView(label("选择剧集", 21));
         int columns = getResources().getConfiguration().screenWidthDp >= 900 ? 8 : 6;
         GridLayout grid = new GridLayout(this); grid.setColumnCount(columns); content.addView(grid);
@@ -661,7 +683,7 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < episodes.length(); i++) {
             int index = i;
             Button episode = new Button(this); episode.setText("第 " + (i + 1) + " 集"); episode.setTextSize(17);
-            episode.setFocusableInTouchMode(true); episode.setAllCaps(false); episode.setTextColor(Color.WHITE); episode.setBackgroundResource(R.drawable.focus_button);
+            episode.setFocusableInTouchMode(true); episode.setAllCaps(false); episode.setTextColor(Color.WHITE); episode.setBackground(PiankeUi.focus(this,i==episodeIndex));
             int width = (getResources().getConfiguration().screenWidthDp - 80) / columns;
             GridLayout.LayoutParams params = new GridLayout.LayoutParams(); params.width = dp(width - 10); params.height = dp(50);
             params.setMargins(dp(4), dp(5), dp(4), dp(5)); grid.addView(episode, params);
@@ -671,25 +693,34 @@ public final class MainActivity extends Activity {
     }
     private void showFavorites() {
         NasClient active=client;
-        task("正在读取本机收藏夹",()->active.request("/api/favorites",null),response->{
-            page(Screen.FAVORITES,"LibreTV   /   本机收藏夹");
-            content.addView(label("收藏仅保存在本机，无需 NAS、账号或服务器。",17));
+        task("正在读取收藏",()->active.request("/api/favorites",null),response->{
+            page(Screen.FAVORITES,"我的收藏");JSONArray list=response.optJSONArray("items");
             button(content,"‹ 返回首页",this::homeOrSearch);
-            button(content,"刷新收藏夹",this::showFavorites);
-            JSONArray list=response.optJSONArray("items");
-            if(list==null || list.length()==0)content.addView(label("还没有收藏。进入影片详情，点击收藏即可。",19));
-            if(list!=null)for(int i=0;i<list.length();i++) {
-                JSONObject favorite=list.getJSONObject(i),item=new JSONObject(favorite.getJSONObject("item").toString());
-                JSONObject source=favorite.getJSONObject("source");
-                item.put("favoriteSource",source);item.put("favoriteId",favorite.optString("id"));
-                button(content,item.optString("name")+"  ·  "+source.optString("name"),()->loadDetail(item,0));
-                JSONObject progress=new PlaybackStore(this).find(source,item);
-                if(progress!=null)content.addView(label("上次看到第 "+(progress.optInt("index")+1)+" 集 · "+time(progress.optLong("position")),17));
-                LinearLayout actions=row();content.addView(actions);
-                button(actions,"加入播放列表",()->task("正在加入播放列表",()->{new PlaybackStore(this).add(source,item,item.optString("name"));return true;},ok->setNotice("已加入播放列表")));
-                button(actions,"移除收藏",()->task("正在移除收藏",()->{client.local.favorites("/api/favorites/"+favorite.getString("id"),null,"DELETE");return true;},ok->showFavorites()));
+            if(list==null||list.length()==0){content.addView(label("还没有收藏。喜欢的影片，点一下收藏就会出现在这里。",19));return;}
+            button(content,"管理收藏",()->{
+                String[] names=new String[list.length()];for(int j=0;j<list.length();j++)names[j]=list.optJSONObject(j).optJSONObject("item").optString("name");
+                new android.app.AlertDialog.Builder(this).setTitle("选择要管理的收藏").setItems(names,(d,w)->favoriteMenu(list.optJSONObject(w))).setNegativeButton("取消",null).show();
+            });
+            int columns=getResources().getConfiguration().screenWidthDp>=1000?5:4;LinearLayout line=null;
+            for(int i=0;i<list.length();i++){
+                if(i%columns==0){line=row();content.addView(line);}JSONObject entry=list.getJSONObject(i),item=new JSONObject(entry.getJSONObject("item").toString()).put("favoriteSource",entry.getJSONObject("source"));
+                LinearLayout card=libraryCard(line,item.optString("name"),item.optString("pic"),new PlaybackStore(this).find(entry.getJSONObject("source"),item),()->loadDetail(item,0));
+                card.setOnLongClickListener(v->{favoriteMenu(entry);return true;});
             }
         });
+    }
+    private LinearLayout libraryCard(LinearLayout parent,String title,String coverUrl,JSONObject saved,Runnable action){
+        LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(8),dp(8),dp(8),dp(10));card.setBackground(PiankeUi.focus(this,false));card.setFocusableInTouchMode(true);card.setClickable(true);card.setContentDescription(title);card.setOnClickListener(v->{if(!busy)action.run();});
+        int columns=getResources().getConfiguration().screenWidthDp>=1000?5:4;int width=(getResources().getConfiguration().screenWidthDp-100)/columns;
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(width),-2);p.setMargins(dp(3),dp(8),dp(3),dp(8));parent.addView(card,p);
+        ImageView cover=new ImageView(this);cover.setScaleType(ImageView.ScaleType.CENTER_CROP);card.addView(cover,new LinearLayout.LayoutParams(-1,dp(175)));posters.load(cover,client,coverUrl);
+        TextView name=label(title,17);name.setMaxLines(2);card.addView(name);TextView status=label(PiankeUi.position(saved),13);status.setTextColor(PiankeUi.SECONDARY);card.addView(status);PiankeUi.progress(card,saved);return card;
+    }
+    private void favoriteMenu(JSONObject entry){
+        new android.app.AlertDialog.Builder(this).setTitle(entry.optJSONObject("item").optString("name")).setItems(new String[]{"加入播放列表","移除收藏"},(d,w)->{
+            if(w==0)task("正在保存",()->{new PlaybackStore(this).add(entry.getJSONObject("source"),entry.getJSONObject("item"),entry.getJSONObject("item").optString("name"));return true;},ok->setNotice("已加入播放列表"));
+            else new android.app.AlertDialog.Builder(this).setMessage("移除这个收藏？观看进度会保留。") .setNegativeButton("取消",null).setPositiveButton("移除",(dialog,which)->task("正在移除",()->{client.local.favorites("/api/favorites/"+entry.getString("id"),null,"DELETE");return true;},ok->showFavorites())).show();
+        }).setNegativeButton("取消",null).show();
     }
     private void homeOrSearch(){
         String destination=getIntent().getStringExtra("tvDestination");
@@ -700,25 +731,19 @@ public final class MainActivity extends Activity {
         if(detailReturn==Screen.PLAYLIST)showPlaylist();else if(detailReturn==Screen.FAVORITES)showFavorites();else showSearch();
     }
     private void showPlaylist() {
-        page(Screen.PLAYLIST,"LibreTV   /   播放列表");
-        Button back=button(content,"‹ 返回首页",this::homeOrSearch);
-        content.addView(label("本机保存 · 自动记录已播放影片，也可在详情手动加入 · 移除后保留观看历史",17));
-        PlaybackStore store=new PlaybackStore(this);JSONArray list=store.playlist();Button first=null;
-        try {
-            if(list.length()==0)content.addView(label("播放列表为空，先搜索一部想看的影片吧",21));
-            for(int i=0;i<list.length();i++) {
-                JSONObject entry=list.getJSONObject(i),source=entry.getJSONObject("source"),item=new JSONObject(entry.getJSONObject("item").toString()).put("favoriteSource",source);
-                String name=entry.optString("title",item.optString("name"));JSONObject saved=store.find(source,item);
-                content.addView(label(name+" · "+source.optString("name")+(saved==null?" · 尚未播放":" · 第 "+(saved.optInt("index")+1)+" 集 · "+time(saved.optLong("position"))+" / "+time(saved.optLong("duration"))),20));
-                LinearLayout actions=row();content.addView(actions);
-                Button play=button(actions,(saved==null?"开始播放 · ":"继续播放 · ")+name,()->loadDetail(item,0,true));if(first==null)first=play;
-                play.setSingleLine(true);play.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                LinearLayout.LayoutParams playParams=new LinearLayout.LayoutParams(0,-2,1);playParams.setMargins(dp(4),dp(4),dp(4),dp(4));play.setLayoutParams(playParams);
-                button(actions,"查看剧集",()->loadDetail(item,0));
-                button(actions,"移出列表",()->task("正在移除",()->{store.remove(entry.getString("id"));return true;},ok->showPlaylist()));
-            }
-        }catch(Exception e){error(e);}
-        if(first!=null)first.requestFocus();else back.requestFocus();
+        page(Screen.PLAYLIST,"我的片单");Button back=button(content,"‹ 返回首页",this::homeOrSearch);
+        PlaybackStore store=new PlaybackStore(this);JSONArray list=store.playlist();View first=null;
+        if(list.length()==0)content.addView(label("片单还是空的，去找一部想看的吧。",21));
+        try {for(int i=0;i<list.length();i++) {
+            JSONObject entry=list.getJSONObject(i),source=entry.getJSONObject("source"),item=new JSONObject(entry.getJSONObject("item").toString()).put("favoriteSource",source);JSONObject saved=store.find(source,item);
+            LinearLayout panel=row();panel.setGravity(Gravity.CENTER_VERTICAL);panel.setPadding(dp(16),dp(12),dp(16),dp(12));panel.setBackground(PiankeUi.surface(this,PiankeUi.PANEL,14));LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,-2);pp.topMargin=dp(12);content.addView(panel,pp);
+            ImageView art=new ImageView(this);art.setScaleType(ImageView.ScaleType.CENTER_CROP);panel.addView(art,new LinearLayout.LayoutParams(dp(66),dp(94)));posters.load(art,client,item.optString("pic"));
+            LinearLayout copy=new LinearLayout(this);copy.setOrientation(LinearLayout.VERTICAL);copy.setPadding(dp(16),0,dp(16),0);panel.addView(copy,new LinearLayout.LayoutParams(0,-2,1));copy.addView(label(entry.optString("title"),21));copy.addView(label(PiankeUi.position(saved),15));PiankeUi.progress(copy,saved);
+            Button play=button(panel,saved==null?"开始播放":"继续播放",()->loadDetail(item,0,true));if(first==null)first=play;
+            button(panel,"更多",()->new android.app.AlertDialog.Builder(this).setTitle(entry.optString("title")).setItems(new String[]{"查看剧集","移出列表"},(d,w)->{
+                if(w==0)loadDetail(item,0);else new android.app.AlertDialog.Builder(this).setMessage("移出片单？观看历史和进度会保留。") .setNegativeButton("取消",null).setPositiveButton("移出",(dialog,which)->task("正在移除",()->{store.remove(entry.getString("id"));return true;},ok->showPlaylist())).show();
+            }).setNegativeButton("取消",null).show());
+        }}catch(Exception e){error(e);}if(first!=null)first.requestFocus();else back.requestFocus();
     }
     private void readFavoriteState() {
         NasClient active=client;JSONObject source=detailSource,item=selected;int ticket=generation;

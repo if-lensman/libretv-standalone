@@ -34,3 +34,6 @@ research/
 scripts/fixtures/*.mp4
 scripts/fixtures/*.m3u8
 scripts/fixtures/*.ts
+
+# Local social-media drafts and raw screenshots; publish only explicit Release assets.
+/promo/

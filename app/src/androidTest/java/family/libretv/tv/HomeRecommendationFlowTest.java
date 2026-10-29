@@ -78,7 +78,7 @@ public final class HomeRecommendationFlowTest extends TestCase {
         launchPhone();click("更多 →");assertEquals("recommendations",field("page"));assertTrue(hasText("推荐测试影片 24"));
         click("返回首页");click("电视剧");awaitText("热门剧集",5000);assertFalse(hasText("高分佳作"));
         for(View v:views())if("底部导航 · 设置".contentEquals(String.valueOf(v.getContentDescription()))){instrument.runOnMainSync(v::performClick);break;}
-        for(View v:views())if(v instanceof CheckBox&&"显示推荐片单".contentEquals(((CheckBox)v).getText())){instrument.runOnMainSync(v::performClick);break;}
+        for(View v:views())if(v instanceof Switch&&"首页推荐".contentEquals(((Switch)v).getText())){instrument.runOnMainSync(v::performClick);break;}
         for(View v:views())if("底部导航 · 首页".contentEquals(String.valueOf(v.getContentDescription()))){instrument.runOnMainSync(v::performClick);break;}
         awaitText("推荐已关闭",3000);assertFalse(hasText("热门剧集"));
         assertTrue(context.getSharedPreferences("live-library",0).getAll().isEmpty());

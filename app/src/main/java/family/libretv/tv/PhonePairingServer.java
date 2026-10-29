@@ -143,8 +143,8 @@ final class PhonePairingServer implements AutoCloseable {
     }
     private static String escape(String value) { return value.replace("&","&amp;").replace("\"","&quot;").replace("<","&lt;").replace(">","&gt;"); }
     private static void reply(OutputStream out,int status,String text) throws IOException {
-        String html="<!doctype html><html lang=zh-CN><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>LibreTV 手机配置</title>"
-            +"<style>body{margin:0;background:#101922;color:#e4eef6;font:17px system-ui,sans-serif;padding:28px 20px}main{max-width:480px;margin:5vh auto}h1{font-size:30px}p{line-height:1.7;color:#afc1ce}label{display:block;margin:24px 0 9px}input,button{box-sizing:border-box;width:100%;padding:15px;border-radius:10px;font:inherit;border:1px solid #48606e}input{background:#233543;color:white}button{margin-top:18px;background:#6be2c3;color:#102b27;font-weight:700}input:focus{outline:2px solid #6be2c3}</style><main>"+text+"</main></html>";
+        String html="<!doctype html><html lang=zh-CN><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>片刻 手机配置</title>"
+            +"<style>body{margin:0;background:#101723;color:#e4eef6;font:17px system-ui,sans-serif;padding:28px 20px}main{max-width:480px;margin:5vh auto}h1{font-size:30px}p{line-height:1.7;color:#afc1ce}label{display:block;margin:24px 0 9px}input,button{box-sizing:border-box;width:100%;padding:15px;border-radius:10px;font:inherit;border:1px solid #48606e}input{background:#233543;color:white}button{margin-top:18px;background:#f15b9b;color:#101723;font-weight:700}input:focus{outline:2px solid #f15b9b}</style><main>"+text+"</main></html>";
         byte[] data=html.getBytes(StandardCharsets.UTF_8);
         String headers="HTTP/1.1 "+status+" Response\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: "+data.length
             +"\r\nConnection: close\r\nCache-Control: no-store\r\nReferrer-Policy: same-origin\r\nX-Content-Type-Options: nosniff\r\n"

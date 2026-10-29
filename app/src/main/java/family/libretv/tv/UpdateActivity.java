@@ -45,15 +45,20 @@ public final class UpdateActivity extends Activity {
     }
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        ScrollView scroll=new ScrollView(this);LinearLayout content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);
-        int pad=Math.round(24*getResources().getDisplayMetrics().density);content.setPadding(pad,pad,pad,pad);scroll.addView(content);setContentView(scroll);
-        TextView heading=new TextView(this);heading.setText("应用更新");heading.setTextSize(25);content.addView(heading);
-        TextView hint=new TextView(this);hint.setText("当前版本 "+BuildConfig.VERSION_NAME+"\n从 GitHub Releases 获取更新，连接失败自动尝试 Gitee 镜像和备用加速通道；覆盖安装保留本机来源、收藏和播放进度。");content.addView(hint);
-        status=new TextView(this);content.addView(status);
-        routeButton=button(content,"",this::chooseRoute);updateRouteLabel();configureUpdater();
-        check=button(content,"检查更新",this::checkUpdate);
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(PiankeUi.BACKGROUND);
+        LinearLayout content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);
+        int pad=PiankeUi.dp(this,24);content.setPadding(pad,pad,pad,pad);scroll.addView(content);setContentView(scroll);
+        button(content,"‹ 返回",this::finish);
+        LinearLayout identity=new LinearLayout(this);identity.setOrientation(LinearLayout.VERTICAL);identity.setGravity(android.view.Gravity.CENTER);identity.setPadding(0,pad,0,pad);content.addView(identity);
+        identity.addView(PiankeUi.brand(this,180,102));
+        TextView slogan=PiankeUi.text(this,PiankeUi.SLOGAN,17,false);slogan.setPadding(0,0,0,pad/2);identity.addView(slogan);
+        identity.addView(PiankeUi.text(this,"当前版本 "+BuildConfig.VERSION_NAME,15,false));
+        status=PiankeUi.text(this,"",15,false);status.setPadding(0,pad/2,0,pad/2);status.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);content.addView(status);
+        check=button(content,"检查更新",this::checkUpdate);check.setBackground(PiankeUi.focus(this,true));
         install=button(content,"安装已下载更新",this::installPending);install.setVisibility(android.view.View.GONE);
-        button(content,"返回",this::finish);check.requestFocus();
+        TextView hint=PiankeUi.text(this,"更新后保留来源与观看记录。",14,false);hint.setPadding(0,pad/2,0,pad/2);content.addView(hint);
+        routeButton=button(content,"",this::chooseRoute);updateRouteLabel();configureUpdater();
+        button(content,"关于片刻",()->PiankeUi.about(this));check.requestFocus();
         if(restorePending()) {
             if(getPreferences(0).getBoolean("awaitingPermission",false) && (Build.VERSION.SDK_INT<26 || getPackageManager().canRequestPackageInstalls()))installPending();
         } else checkUpdate();
@@ -87,8 +92,8 @@ public final class UpdateActivity extends Activity {
         }));dialog.show();
     }
     private Button button(LinearLayout parent,String title,Runnable action) {
-        Button b=new Button(this);b.setText(title);b.setAllCaps(false);b.setFocusableInTouchMode(true);b.setBackgroundResource(R.drawable.focus_button);b.setTextColor(android.graphics.Color.WHITE);
-        parent.addView(b,new LinearLayout.LayoutParams(-1,-2));b.setOnClickListener(v->{if(!busy)action.run();});return b;
+        Button b=new Button(this);b.setText(title);b.setAllCaps(false);b.setFocusableInTouchMode(true);b.setBackground(PiankeUi.focus(this,false));b.setTextSize(16);b.setMinHeight(PiankeUi.dp(this,52));b.setPadding(PiankeUi.dp(this,16),PiankeUi.dp(this,10),PiankeUi.dp(this,16),PiankeUi.dp(this,10));b.setTextColor(android.graphics.Color.WHITE);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.topMargin=PiankeUi.dp(this,8);parent.addView(b,p);b.setOnClickListener(v->{if(!busy)action.run();});return b;
     }
     private interface Work<T>{T run()throws Exception;}
     private interface Done<T>{void accept(T value)throws Exception;}

@@ -65,6 +65,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
    keyword=q.get('wd',['Fixture'])[0]
    data=json.dumps({'pagecount':1,'list':[{'vod_id':1,'vod_name':keyword+' '+parsed.path[1:],'vod_pic':''}]}).encode()
    self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
+  if parsed.path=='/pianke/cms':
+   names=['山海之间','星河漫游','春日来信','远山回响']
+   items=[{'vod_id':i+1,'vod_name':name,'vod_pic':'http://10.0.2.2:19001/pianke-cover.jpg' if i!=3 else '', 'vod_remarks':'共24集','vod_year':'2026','vod_area':'本地演示','type_name':'电视剧','vod_content':'海风吹过山间，留一点时间给喜欢的故事。','vod_play_url':'#'.join('第%d集$http://10.0.2.2:19001/demo.mp4'%j for j in range(1,25))} for i,name in enumerate(names)]
+   wanted=int(q.get('ids',['0'])[0]);payload={'pagecount':1,'list':[items[(wanted-1)%4]] if wanted else items}
+   data=json.dumps(payload).encode();self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
   if parsed.path=='/cms':
    if 'ids' in q:payload={'list':[{'vod_id':1,'vod_name':'Fixture title','vod_play_url':'网页$http://example.invalid/share/1$$$第1集$http://10.0.2.2:19001/redirect.m3u8#第2集$http://10.0.2.2:19001/sample.mp4'}]}
    else:payload={'pagecount':2,'list':[{'vod_id':1 if q.get('pg',['1'])[0]=='1' else 2,'vod_name':'Fixture title','vod_remarks':'测试集数','vod_pic':''}]}
