@@ -362,10 +362,12 @@ public final class LivePlayerActivity extends Activity {
     }
     @SuppressWarnings("deprecation") @Override public void onBackPressed(){
         if(pickerOpen&&!phonePortrait()){closeChannelPicker();return;}
+        // Touch navigation matches the on-screen Back button, including while buffering.
+        // A car head unit may ignore portrait requests, so Back must not depend on rotation.
+        if(!tvRemote){finish();return;}
         if(video!=null&&(video.isControllerFullyVisible()||!phonePortrait()&&chrome.getVisibility()==View.VISIBLE)){
             video.hideController();controlsShown=false;updateLiveVisibility();return;
         }
-        if(!tvRemote&&entryOrientation==Configuration.ORIENTATION_PORTRAIT&&landscape()&&getRequestedOrientation()!=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED){setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);return;}
         super.onBackPressed();
     }
     @Override protected void onSaveInstanceState(Bundle state){state.putInt("entryOrientation",entryOrientation);state.putString("pickerGroup",pickerGroup);state.putFloat("windowBrightness",getWindow().getAttributes().screenBrightness);state.putBoolean("resume",player==null?playAfterRecovery:player.getPlayWhenReady());try{state.putString("channelId",channel().getString("id"));state.putInt("line",lineIndex);}catch(Exception ignored){}super.onSaveInstanceState(state);}

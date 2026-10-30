@@ -67,7 +67,8 @@ public final class LivePlayerDesignFlowTest extends TestCase {
         tap(find("横屏",false));rotate(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);ready();instrument.runOnMainSync(()->{assertSame(before[0],player());assertEquals(before[1],field("ticket"));});
         controls();capture("live-phone-landscape.png");tap(find("选台",false));find("频道分类",false);capture("live-phone-categories.png");
         tap(find("频道分类 · 音乐",true));find("音乐 · 4 个频道",false);tap(find("播放频道 · 音乐1台",true));ready();assertEquals(8,field("index"));assertFalse((Boolean)field("pickerOpen"));
-        controls();key(KeyEvent.KEYCODE_BACK);assertFalse(activity.isFinishing());key(KeyEvent.KEYCODE_BACK);rotate(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);assertNotNull(field("channelPanel"));
+        rotate(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);assertNotNull(field("channelPanel"));
+        controls();key(KeyEvent.KEYCODE_BACK);assertTrue("Touch Back returns directly to the channel list",activity.isFinishing());
         assertTrue(context.getSharedPreferences("standalone-playback",0).getAll().isEmpty());
     }
     public void testTvCategoriesDirectionKeysAndScreenshots()throws Exception {

@@ -10,11 +10,19 @@ import java.io.*;
 /** Android 6's stock installer cannot consume content URIs; sessions work from API 21. */
 final class UpdateInstaller {
     private UpdateInstaller() { }
+    static Intent fileIntent(Context context,File apk,String action) {
+        android.net.Uri uri=FileProvider.getUriForFile(context,context.getPackageName()+".updates",apk);
+        Intent intent=new Intent(action).setDataAndType(uri,"application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.setClipData(ClipData.newRawUri("APK",uri));return intent;
+    }
+    static void openCompatible(Context context,File apk) throws Exception {
+        if(Build.VERSION.SDK_INT<24){install(context,apk);return;}
+        context.startActivity(fileIntent(context,apk,Intent.ACTION_VIEW));
+    }
     static void install(Context context, File apk) throws Exception {
         if (Build.VERSION.SDK_INT >= 24) {
-            context.startActivity(new Intent(Intent.ACTION_INSTALL_PACKAGE)
-                .setDataAndType(FileProvider.getUriForFile(context, context.getPackageName()+".updates", apk), "application/vnd.android.package-archive")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK));
+            context.startActivity(fileIntent(context,apk,Intent.ACTION_INSTALL_PACKAGE));
             return;
         }
         PackageInstaller installer = context.getPackageManager().getPackageInstaller();

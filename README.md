@@ -1,5 +1,7 @@
 # 片刻
 
+[0.20.1 更新说明](docs/release-notes-0.20.1.md)：触摸直播系统返回修复，车机更新增加兼容安装与手动保存入口。
+
 > 留点片刻，看点喜欢的
 
 <img src="docs/design/brand/pianke-liuguang.png" width="160" alt="片刻留光图标">

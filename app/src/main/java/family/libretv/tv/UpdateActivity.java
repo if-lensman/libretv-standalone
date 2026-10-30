@@ -17,7 +17,7 @@ public final class UpdateActivity extends Activity {
     private Button routeButton;
     private String activeRoute="";
     private TextView status;
-    private Button check, install;
+    private Button check, install, compatible, saveApk;
     private File pending;
     private boolean dead,busy;
 
@@ -56,6 +56,8 @@ public final class UpdateActivity extends Activity {
         status=PiankeUi.text(this,"",15,false);status.setPadding(0,pad/2,0,pad/2);status.setAccessibilityLiveRegion(android.view.View.ACCESSIBILITY_LIVE_REGION_POLITE);content.addView(status);
         check=button(content,"检查更新",this::checkUpdate);check.setBackground(PiankeUi.focus(this,true));
         install=button(content,"安装已下载更新",this::installPending);install.setVisibility(android.view.View.GONE);
+        compatible=button(content,"兼容方式打开安装包",this::installCompatible);compatible.setVisibility(android.view.View.GONE);
+        saveApk=button(content,"保存安装包到文件…",this::savePending);saveApk.setVisibility(android.view.View.GONE);
         TextView hint=PiankeUi.text(this,"更新后保留来源与观看记录。",14,false);hint.setPadding(0,pad/2,0,pad/2);content.addView(hint);
         routeButton=button(content,"",this::chooseRoute);updateRouteLabel();configureUpdater();
         Button about=button(content,"关于片刻",()->PiankeUi.about(this));android.graphics.drawable.Drawable icon=getDrawable(R.drawable.pianke_art);icon.setBounds(0,0,PiankeUi.dp(this,28),PiankeUi.dp(this,28));about.setCompoundDrawables(icon,null,null,null);about.setCompoundDrawablePadding(PiankeUi.dp(this,12));check.requestFocus();
@@ -102,7 +104,7 @@ public final class UpdateActivity extends Activity {
         worker.submit(()->{try{T result=task.run();main.post(()->{
             if(dead)return;busy=false;check.setEnabled(true);routeButton.setEnabled(true);
             try{done.accept(result);}catch(Exception e){status.setText(e.getMessage());}
-        });}catch(Exception e){main.post(()->{if(!dead){busy=false;check.setEnabled(true);routeButton.setEnabled(true);status.setText("更新失败："+e.getMessage()+"\n请检查网络后重试。");}});}});
+        });}catch(Exception e){main.post(()->{if(!dead){busy=false;check.setEnabled(true);routeButton.setEnabled(true);status.setText("更新操作失败："+e.getMessage()+"\n若已下载完成，安装包仍可在本页继续安装或保存；下载阶段失败可切换通道重试。");}});}});
     }
     private void checkUpdate() {
         work("正在检查 GitHub Release…",updater::check,release->{
@@ -115,7 +117,7 @@ public final class UpdateActivity extends Activity {
     private void download(AppUpdater.Release release) {
         work("正在下载更新…",()->updater.download(this,release,percent->main.post(()->{if(!dead)status.setText("正在下载 · "+percent+"%\n"+activeRoute);})),file->{
             getPreferences(0).edit().putInt("pendingCode",release.code).putString("pendingSha",release.sha256).putLong("pendingSize",release.size).commit();
-            pending=file;install.setVisibility(android.view.View.VISIBLE);status.setText("下载完成，签名和完整性校验通过");installPending();
+            pending=file;showPendingActions();status.setText("下载完成，签名和完整性校验通过");installPending();
         });
     }
     private boolean restorePending() {
@@ -129,7 +131,7 @@ public final class UpdateActivity extends Activity {
             }
             if(!AppUpdater.hex(digest.digest()).equals(prefs.getString("pendingSha","")))throw new java.io.IOException();
             AppUpdater.validateApk(this,file,prefs.getInt("pendingCode",-1));
-            pending=file;install.setVisibility(android.view.View.VISIBLE);status.setText("已恢复校验通过的安装包，可继续安装");install.requestFocus();return true;
+            pending=file;showPendingActions();status.setText("安装包已保存在 App 内，校验通过。可继续安装；车机不支持时可选兼容方式或保存到文件后手动安装。");install.requestFocus();return true;
         } catch(Exception ignored) {prefs.edit().clear().apply();return false;}
     }
     private void installPending() {
@@ -137,14 +139,40 @@ public final class UpdateActivity extends Activity {
         try {
             if(Build.VERSION.SDK_INT>=26 && !getPackageManager().canRequestPackageInstalls()) {
                 getPreferences(0).edit().putBoolean("awaitingPermission",true).commit();
+                status.setText("安装包已下载并保存在 App 内。需要允许安装未知应用；若车机提示不支持此操作，请返回后选择兼容方式，或保存安装包后用车机文件管理器安装。");
                 startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName())),71);return;
             }
             getPreferences(0).edit().putBoolean("awaitingPermission",false).commit();
             UpdateInstaller.install(this,pending);
-        }catch(Exception e){status.setText("无法打开安装器："+e.getMessage());}
+        }catch(Exception e){status.setText("系统未能打开安装授权或安装器："+e.getMessage()+"\n安装包仍保存在 App 内，可选择兼容方式或保存到文件。车机的安装限制仍需在系统中允许。");}
+    }
+    private void showPendingActions() {
+        install.setVisibility(android.view.View.VISIBLE);compatible.setVisibility(android.view.View.VISIBLE);saveApk.setVisibility(android.view.View.VISIBLE);
+    }
+    private void installCompatible() {
+        if(pending==null)return;
+        try {UpdateInstaller.openCompatible(this,pending);}
+        catch(Exception e){status.setText("系统不支持兼容安装入口："+e.getMessage()+"\n可保存安装包后手动安装；若车机禁止第三方安装，需要先在车机系统中允许。");}
+    }
+    private void savePending() {
+        if(pending==null)return;
+        try {startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("application/vnd.android.package-archive").putExtra(Intent.EXTRA_TITLE,"LibreTV-"+getPreferences(0).getInt("pendingCode",0)+".apk"),72);}
+        catch(Exception e){status.setText("系统没有可用的文件保存入口。安装包仍在 App 内，可尝试兼容安装，或从项目发行页手动下载。\n"+e.getMessage());}
+    }
+    private void exportPending(Uri destination) {
+        File source=pending;if(source==null)return;
+        work("正在保存安装包…",()->{
+            try(java.io.InputStream in=new java.io.FileInputStream(source);java.io.OutputStream out=getContentResolver().openOutputStream(destination,"w")) {
+                if(out==null)throw new java.io.IOException("无法写入所选文件");
+                byte[] bytes=new byte[32768];int n;while((n=in.read(bytes))!=-1)out.write(bytes,0,n);
+            }
+            return destination;
+        },uri->status.setText("安装包已保存到你选择的位置。请用车机文件管理器打开安装；无需授予 App SD卡读写权限。若仍被系统拒绝，需检查车机的第三方安装限制。"));
     }
     @Override protected void onActivityResult(int code,int result,Intent data) {
         super.onActivityResult(code,result,data);
+        if(code==72 && result==RESULT_OK && data!=null && data.getData()!=null){exportPending(data.getData());return;}
         if(code==71 && Build.VERSION.SDK_INT>=26 && getPackageManager().canRequestPackageInstalls())installPending();
     }
     @Override protected void onDestroy(){dead=true;worker.shutdownNow();main.removeCallbacksAndMessages(null);super.onDestroy();}
