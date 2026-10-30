@@ -49,6 +49,7 @@ public final class DirectPlayerActivity extends Activity {
     private Button favorite;
     private TextView landscapeCaption;
     private boolean landscape;
+    private int entryOrientation;
     private Button previous, next, speed, subtitle;
     private Switch autoNext;
     private PlaybackStore history;
@@ -59,6 +60,7 @@ public final class DirectPlayerActivity extends Activity {
     };
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        entryOrientation=state==null?getResources().getConfiguration().orientation:state.getInt("entryOrientation",getResources().getConfiguration().orientation);
         setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         if(state!=null&&state.containsKey("windowBrightness")){android.view.WindowManager.LayoutParams attrs=getWindow().getAttributes();attrs.screenBrightness=state.getFloat("windowBrightness");getWindow().setAttributes(attrs);}
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
@@ -274,7 +276,7 @@ public final class DirectPlayerActivity extends Activity {
             playerView.hideController();controlsVisible=false;
             if(landscape){topChrome.setVisibility(View.GONE);bottomChrome.setVisibility(View.GONE);}return;
         }
-        if(getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE)setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        if(entryOrientation==Configuration.ORIENTATION_PORTRAIT && getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE && getRequestedOrientation()!=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         else super.onBackPressed();
     }
     private void saveProgress() {
@@ -282,6 +284,7 @@ public final class DirectPlayerActivity extends Activity {
     }
     @Override protected void onSaveInstanceState(Bundle state) {
         state.putFloat("windowBrightness",getWindow().getAttributes().screenBrightness);
+        state.putInt("entryOrientation",entryOrientation);
         state.putInt("index", index);
         state.putBoolean("controlsVisible",controlsVisible);
         state.putLong("position", player == null ? position : player.getCurrentPosition());

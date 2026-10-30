@@ -82,7 +82,7 @@ public final class MinimumApiCompatibilityTest extends TestCase {
         launch(LiveBrowseActivity.class,new Intent());assertEquals(2,((List)field("visible")).size());assertTrue(((Map)field("controls")).containsKey("group:央视"));close();
         launch(LivePlayerActivity.class,new Intent().putExtra("channelId",repo.channels().getJSONObject(0).getString("id")).putExtra("tvRemote",true));playing();
         assertEquals(Boolean.TRUE,field("renderedFrame"));capture("api23-live-playing.png");
-        instrument.runOnMainSync(()->{activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_RIGHT));activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_RIGHT));});
+        instrument.runOnMainSync(()->{((androidx.media3.ui.PlayerView)field("video")).hideController();activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_RIGHT));activity.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_RIGHT));});
         assertEquals(1,field("index"));playing();assertEquals(0,new PlaybackStore(context).all().length());
     }
     public void testDirectPlayerDecodesMp4AndRecordsProgress()throws Exception {

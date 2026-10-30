@@ -25,7 +25,7 @@ public final class PlayerDesignFlowTest extends TestCase {
     private static final String ROOT="http://10.0.2.2:19001";
     @Override protected void setUp() throws Exception {
         instrument=InstrumentationRegistry.getInstrumentation();context=instrument.getTargetContext();
-        for(String name:new String[]{"standalone-library","standalone-player","standalone-playback","MainActivity","family.libretv.tv.MainActivity","recommendations","github-updates"}){
+        for(String name:new String[]{"live-library","standalone-library","standalone-player","standalone-playback","MainActivity","family.libretv.tv.MainActivity","recommendations","github-updates"}){
             SharedPreferences p=context.getSharedPreferences(name,0);backups.put(name,new HashMap<>(p.getAll()));p.edit().clear().commit();
         }
         context.getSharedPreferences("github-updates",0).edit().putLong("lastCheck",System.currentTimeMillis()).commit();
@@ -101,29 +101,82 @@ public final class PlayerDesignFlowTest extends TestCase {
         click("更多");chooseDialog("dialog",0);assertTrue("Restart did not seek to start",position()<1500);instrument.runOnMainSync(()->player().pause());
         click("更多");chooseDialog("dialog",1);assertTrue(context.getSharedPreferences("standalone-player",0).getBoolean("autoNext",false));
     }
-    public void testTvDirectionsWakeControlsWithoutSeekingAndScreenshot() throws Exception {
+    private Activity resumed(Class<?> type,Activity excluded)throws Exception {
+        long until=SystemClock.uptimeMillis()+10000;
+        while(SystemClock.uptimeMillis()<until){Activity[] found={null};instrument.runOnMainSync(()->{
+            for(Activity a:androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))if(type.isInstance(a)&&a!=excluded)found[0]=a;
+        });if(found[0]!=null)return found[0];Thread.sleep(50);}throw new AssertionError("No resumed "+type);
+    }
+    private void backFromLandscapePlayer(String viewField)throws Exception {
+        long until=SystemClock.uptimeMillis()+3000;while(!activity.hasWindowFocus()&&SystemClock.uptimeMillis()<until)Thread.sleep(50);
+        Activity old=activity;instrument.runOnMainSync(()->((PlayerView)field(viewField)).hideController());instrument.waitForIdleSync();Thread.sleep(150);
+        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);instrument.waitForIdleSync();
+        instrument.runOnMainSync(()->assertTrue("Landscape entry must leave without forcing portrait",old.isFinishing()));
+        activity=resumed(PhoneActivity.class,old);assertEquals(android.content.res.Configuration.ORIENTATION_LANDSCAPE,activity.getResources().getConfiguration().orientation);
+    }
+    public void testLandscapeDeviceKeepsHomeAndPlayerReturnOrientation()throws Exception {
+        assertEquals("Run this test on a landscape system",android.content.res.Configuration.ORIENTATION_LANDSCAPE,context.getResources().getConfiguration().orientation);
+        for(Class<?> type:new Class<?>[]{PhoneActivity.class,SourceScannerActivity.class})assertEquals(ActivityInfo.SCREEN_ORIENTATION_USER,context.getPackageManager().getActivityInfo(new ComponentName(context,type),0).screenOrientation);
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_USER,context.getPackageManager().getActivityInfo(new ComponentName(context,MainActivity.class),0).screenOrientation);
+        activity=instrument.startActivitySync(new Intent(context,MainActivity.class).setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        activity=resumed(PhoneActivity.class,null);assertEquals(android.content.res.Configuration.ORIENTATION_LANDSCAPE,activity.getResources().getConfiguration().orientation);
+        capture("device-home-landscape.png");
+        for(View v:views())if("侧边导航 · 设置".contentEquals(v.getContentDescription()==null?"":v.getContentDescription())){instrument.runOnMainSync(v::performClick);break;}
+        instrument.waitForIdleSync();assertEquals(android.content.res.Configuration.ORIENTATION_LANDSCAPE,activity.getResources().getConfiguration().orientation);capture("device-settings-landscape.png");
+        activity=instrument.startActivitySync(new Intent(context,DirectPlayerActivity.class).putExtra("url",ROOT+"/demo.mp4").putExtra("title","设备方向测试").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));ready();
+        assertEquals(android.content.res.Configuration.ORIENTATION_LANDSCAPE,field("entryOrientation"));
+        Activity old=activity;instrument.runOnMainSync(old::recreate);activity=resumed(DirectPlayerActivity.class,old);ready();
+        assertEquals(android.content.res.Configuration.ORIENTATION_LANDSCAPE,field("entryOrientation"));capture("device-vod-landscape.png");backFromLandscapePlayer("playerView");
+        LiveRepository repo=new LiveRepository(context);repo.importPlaylist("Orientation fixture",LocalRepository.fetch(ROOT+"/live/list"));
+        activity=instrument.startActivitySync(new Intent(context,LivePlayerActivity.class).putExtra("channelId",repo.channels().getJSONObject(0).getString("id")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));ready();
+        assertEquals(android.content.res.Configuration.ORIENTATION_LANDSCAPE,field("entryOrientation"));capture("device-live-landscape.png");backFromLandscapePlayer("video");
+    }
+    public void testTvRemoteSeekSpeedAndTwoRowControls() throws Exception {
         instrument.setInTouchMode(false);
         activity=instrument.startActivitySync(new Intent(context,MainActivity.class).putExtra("tvDestination","search").addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
         JSONObject source=source(),item=item();JSONArray episodes=new JSONArray();for(int i=0;i<24;i++)episodes.put(ROOT+"/demo.mp4");
         instrument.runOnMainSync(()->{set("title","山海之间");set("detailSource",source);set("selected",item);set("episodes",episodes);set("episodeIndex",2);try{set("playbackUri",new java.net.URI(ROOT+"/demo.mp4"));}catch(Exception e){throw new RuntimeException(e);}set("position",0L);set("playWhenReady",true);invoke("showPlayer",new Class<?>[]{});});ready();at(20000);
-        Thread.sleep(400);instrument.waitForIdleSync();
-        long focusDeadline=SystemClock.uptimeMillis()+5000;while(!activity.hasWindowFocus()&&SystemClock.uptimeMillis()<focusDeadline)Thread.sleep(50);
-        instrument.runOnMainSync(()->{assertTrue("TV window not focused",activity.hasWindowFocus());assertFalse("TV remote tests require non-touch input mode",activity.getWindow().getDecorView().isInTouchMode());invoke("hideControls",new Class<?>[]{});});
-        instrument.getUiAutomation().waitForIdle(300,3000);Thread.sleep(400);
-        for(int direction:new int[]{KeyEvent.KEYCODE_DPAD_LEFT,KeyEvent.KEYCODE_DPAD_RIGHT,KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN}){
-            instrument.runOnMainSync(()->invoke("hideControls",new Class<?>[]{}));
-            instrument.waitForIdleSync();Thread.sleep(150);
-            instrument.sendKeyDownUpSync(direction);instrument.waitForIdleSync();Thread.sleep(100);
-            instrument.runOnMainSync(()->{assertTrue("Direction "+direction+" did not wake controls; focus="+activity.getCurrentFocus()+" window="+activity.hasWindowFocus(),(Boolean)field("controlsVisible"));assertEquals(field("playToggle"),activity.getCurrentFocus());});
-            awaitPosition(20000);
+        long deadline=SystemClock.uptimeMillis()+5000;while(!activity.hasWindowFocus()&&SystemClock.uptimeMillis()<deadline)Thread.sleep(50);
+        instrument.runOnMainSync(()->{assertTrue(activity.hasWindowFocus());invoke("hideControls",new Class<?>[]{});});instrument.waitForIdleSync();
+        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);awaitPosition(30000);
+        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_LEFT);awaitPosition(20000);
+        instrument.runOnMainSync(()->{assertFalse((Boolean)field("controlsVisible"));assertFalse(player().getPlayWhenReady());});
+        at(50000);long down=SystemClock.uptimeMillis();
+        // Synthesize repeat timing deterministically; normal short presses above use real input injection.
+        instrument.runOnMainSync(()->activity.dispatchKeyEvent(new KeyEvent(down,down,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_LEFT,0)));awaitPosition(40000);
+        instrument.runOnMainSync(()->activity.dispatchKeyEvent(new KeyEvent(down,down+600,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_LEFT,1)));awaitPosition(10000);
+        instrument.runOnMainSync(()->activity.dispatchKeyEvent(new KeyEvent(down,down+650,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_LEFT,2)));awaitPosition(10000);
+        instrument.runOnMainSync(()->activity.dispatchKeyEvent(new KeyEvent(down,down+2200,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_LEFT,3)));awaitPosition(0);
+        instrument.runOnMainSync(()->activity.dispatchKeyEvent(new KeyEvent(down,down+2250,KeyEvent.ACTION_UP,KeyEvent.KEYCODE_DPAD_LEFT,0)));
+        instrument.runOnMainSync(()->{assertFalse((Boolean)field("controlsVisible"));assertEquals(KeyEvent.KEYCODE_UNKNOWN,field("tvSeekKey"));});
+        capture("player-tv-seek.png");
+        at(20000);
+        for(int direction:new int[]{KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN}){
+            instrument.runOnMainSync(()->invoke("hideControls",new Class<?>[]{}));instrument.waitForIdleSync();
+            instrument.sendKeyDownUpSync(direction);instrument.waitForIdleSync();
+            instrument.runOnMainSync(()->{assertTrue((Boolean)field("controlsVisible"));assertEquals(field("playToggle"),activity.getCurrentFocus());});awaitPosition(20000);
         }
-        View[] focus={null};instrument.runOnMainSync(()->focus[0]=activity.getCurrentFocus());assertEquals(field("playToggle"),focus[0]);
+        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);instrument.waitForIdleSync();
+        instrument.runOnMainSync(()->{assertEquals("快退 10秒",((Button)activity.getCurrentFocus()).getText().toString());
+            Button speed=(Button)field("speedButton"),play=(Button)field("playToggle");assertNotSame(speed.getParent(),play.getParent());
+            assertTrue(play.getHeight()<=Math.round(48*context.getResources().getDisplayMetrics().density));});awaitPosition(20000);
         capture("player-tv-controls.png");
-        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);instrument.waitForIdleSync();instrument.runOnMainSync(()->focus[0]=activity.getCurrentFocus());assertTrue(focus[0] instanceof Button);assertEquals("上一集",((Button)focus[0]).getText().toString());
-        assertFalse(texts().contains("−10 秒"));assertFalse(texts().contains("+10 秒"));
-        click("更多");Thread.sleep(150);capture("player-tv-more.png");chooseDialog("playerOptions",1);assertTrue(activity.getPreferences(Context.MODE_PRIVATE).getBoolean("autoNext",false));
+        long[] duration={0};instrument.runOnMainSync(()->duration[0]=player().getDuration());
+        at(duration[0]-5000);instrument.runOnMainSync(()->invoke("hideControls",new Class<?>[]{}));
+        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);awaitPosition(duration[0]);
+        at(20000);instrument.runOnMainSync(()->{player().play();invoke("hideControls",new Class<?>[]{});});
+        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_RIGHT);ready();Thread.sleep(250);
+        instrument.runOnMainSync(()->{assertTrue(player().getPlayWhenReady());assertFalse((Boolean)field("controlsVisible"));});
+        at(20000);instrument.runOnMainSync(()->invoke("showControls",new Class<?>[]{boolean.class},true));
+        click("快进 10秒");awaitPosition(30000);click("快退 10秒");awaitPosition(20000);
+        click("倍速 1.0×");capture("player-tv-speed.png");chooseDialog("playerOptions",3);
+        instrument.runOnMainSync(()->assertEquals(1.5f,player().getPlaybackParameters().speed,.001f));
+        assertEquals(1.5f,activity.getPreferences(Context.MODE_PRIVATE).getFloat("playbackSpeed",0),.001f);
+        instrument.runOnMainSync(()->{invoke("releasePlayer",new Class<?>[]{});invoke("startPlayer",new Class<?>[]{});});ready();
+        instrument.runOnMainSync(()->assertEquals(1.5f,player().getPlaybackParameters().speed,.001f));
+        click("更多");chooseDialog("playerOptions",1);assertTrue(activity.getPreferences(Context.MODE_PRIVATE).getBoolean("autoNext",false));
         click("字幕");disableSubtitles("subtitleMenu");
-        click("更多");chooseDialog("playerOptions",0);assertTrue("TV restart did not seek to start",position()<1500);instrument.runOnMainSync(()->player().pause());
+        click("更多");chooseDialog("playerOptions",0);assertTrue(position()<1500);instrument.runOnMainSync(()->player().pause());
         instrument.runOnMainSync(()->invoke("hideControls",new Class<?>[]{}));capture("player-tv-hidden.png");
     }
 }

@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
+import android.content.res.Configuration
 import android.content.res.ColorStateList
 import android.view.Gravity
 import android.view.ViewGroup
@@ -92,6 +93,46 @@ class PhoneActivity : Activity() {
     private var liveSelected = ""
     private var liveVisible = 40
 
+    private val wideTouch get() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    private val touchContentWidthDp get() = (resources.configuration.screenWidthDp - (if(wideTouch) 84 else 0) - 36).coerceAtLeast(240)
+    private val twoTouchColumns get() = wideTouch && touchContentWidthDp >= 560
+    private var pendingLayout = false
+    private var recommendationListCategory = "movie"
+    private var recommendationListItems = JSONArray()
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if(busy || batchRunning) pendingLayout = true else rebuildTouchLayout()
+    }
+    // Keep the Activity, network search and cast ownership alive when the system rotates/resizes it.
+    private fun rebuildTouchLayout() {
+        if(!::content.isInitialized) return
+        pendingLayout = false
+        val drafts = mutableMapOf<String,String>()
+        var focusedInput: String? = null
+        val numbers = mutableMapOf<String,Int>()
+        fun remember(view: View) {
+            if(view is EditText) { val key=view.hint?.toString().orEmpty(); drafts[key]=view.text.toString(); if(view.hasFocus()) focusedInput=key }
+            if(view is NumberPicker) numbers[view.contentDescription.toString()]=view.value
+            if(view is ViewGroup) for(i in 0 until view.childCount) remember(view.getChildAt(i))
+        }
+        remember(content)
+        val oldPage=page; val oldY=scroll.scrollY; val feedback=notice.text.toString()
+        when(oldPage) {
+            "home" -> home(); "search-landing" -> searchLanding(); "search" -> searchScreen(); "detail" -> details()
+            "settings" -> settingsScreen(); "config" -> login(); "live-sources" -> liveSourcesScreen(); "live" -> liveScreen(false)
+            "history" -> historyScreen(); "playlist" -> playlistScreen(); "favorites" -> favorites()
+            "recommendations" -> recommendationList(recommendationListCategory,recommendationListItems)
+            "controls" -> controls(); "batch" -> batchScreen(); else -> home()
+        }
+        fun restore(view: View) {
+            if(view is EditText) { val key=view.hint?.toString().orEmpty(); drafts[key]?.let {view.setText(it);view.setSelection(view.text.length)}; if(key==focusedInput)view.requestFocus() }
+            if(view is NumberPicker) numbers[view.contentDescription.toString()]?.let {view.value=it.coerceIn(view.minValue,view.maxValue)}
+            if(view is ViewGroup) for(i in 0 until view.childCount) restore(view.getChildAt(i))
+        }
+        restore(content); if(feedback.isNotEmpty()) notice.text=feedback
+        scroll.post {scroll.scrollTo(0,oldY)}
+    }
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -116,10 +157,11 @@ class PhoneActivity : Activity() {
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(14), dp(18), dp(24))
         }
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(backgroundColor) }
-        scroll.addView(content); root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
+        val root = LinearLayout(this).apply { orientation = if(wideTouch) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL; setBackgroundColor(backgroundColor); tag=if(wideTouch) "touch-landscape" else "touch-portrait" }
+        scroll.addView(content)
         val tab = when(name) { "home","recommendations" -> "首页"; "live" -> "直播"; "history","favorites","playlist" -> "历史"; "settings","config","live-sources" -> "设置"; "controls","batch" -> "历史"; else -> "搜索" }
-        val navigation = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(6),dp(5),dp(6),dp(5)); setBackgroundColor(Color.rgb(13,19,29)); elevation=dp(6).toFloat() }
+        val navigation = LinearLayout(this).apply { orientation = if(wideTouch) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; setPadding(dp(6),dp(5),dp(6),dp(5)); setBackgroundColor(Color.rgb(13,19,29)); elevation=dp(6).toFloat() }
+        if(wideTouch) navigation.addView(PiankeUi.brand(this,40,40),LinearLayout.LayoutParams(-1,dp(60)))
         val tabs=listOf("首页" to R.drawable.ic_nav_home,"搜索" to R.drawable.ic_nav_search,"直播" to R.drawable.ic_nav_live,"历史" to R.drawable.ic_nav_history,"设置" to R.drawable.ic_nav_settings)
         tabs.forEach { (label,icon) ->
             val selected=label==tab
@@ -128,20 +170,28 @@ class PhoneActivity : Activity() {
                 setTextColor(if(selected)accentColor else secondaryColor); setPadding(dp(4),dp(6),dp(4),dp(5))
                 background=surface(if(selected)Color.rgb(39,25,41) else Color.rgb(13,19,29),12)
                 setCompoundDrawablesWithIntrinsicBounds(null,getDrawable(icon)?.mutate()?.apply { setTint(if(selected)accentColor else secondaryColor) },null,null)
-                compoundDrawablePadding=dp(3); isSelected=selected; contentDescription="底部导航 · $label"
+                compoundDrawablePadding=dp(3); isSelected=selected; contentDescription=(if(wideTouch) "侧边导航" else "底部导航")+" · $label"
                 setOnClickListener { if(!busy) { hideKeyboard(); when(label) { "首页" -> home(); "搜索" -> searchLanding(); "直播" -> liveScreen(); "历史" -> historyScreen(); "设置" -> settingsScreen() } } }
             }
-            navigation.addView(entry,LinearLayout.LayoutParams(0,dp(62),1f))
+            navigation.addView(entry,if(wideTouch) LinearLayout.LayoutParams(-1,dp(64)) else LinearLayout.LayoutParams(0,dp(62),1f))
         }
-        root.addView(navigation,LinearLayout.LayoutParams(-1,-2));setContentView(root)
+        if(wideTouch) {
+            val rail=ScrollView(this).apply {isFillViewport=true;isVerticalScrollBarEnabled=false;setBackgroundColor(Color.rgb(13,19,29));addView(navigation)}
+            root.addView(rail,LinearLayout.LayoutParams(dp(84),-1))
+            root.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
+        } else {
+            root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
+            root.addView(navigation,LinearLayout.LayoutParams(-1,-2))
+        }
+        setContentView(root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom)); navigation.visibility=if(insets.isVisible(WindowInsetsCompat.Type.ime())) View.GONE else View.VISIBLE; insets
+            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom)); navigation.visibility=if(!wideTouch && insets.isVisible(WindowInsetsCompat.Type.ime())) View.GONE else View.VISIBLE; insets
         }
         ViewCompat.requestApplyInsets(root)
-        if(name == "home") content.addView(PiankeUi.brand(this,64,64))
-        else content.addView(text(heading, 25f).apply { setTypeface(typeface, Typeface.BOLD) })
+        if(name == "home") {if(!wideTouch) content.addView(PiankeUi.brand(this,64,64))}
+        else content.addView(text(heading, if(wideTouch) 23f else 25f).apply { setTypeface(typeface, Typeface.BOLD) })
         notice = text("", 14f).apply {
             setTextColor(accentColor); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
             visibility = View.GONE
@@ -153,9 +203,9 @@ class PhoneActivity : Activity() {
         }
         content.addView(notice)
     }
-    private fun section(heading: String? = null): LinearLayout = LinearLayout(this).apply {
+    private fun section(heading: String? = null, parent: LinearLayout = content): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL; background = surface(); setPadding(dp(12), dp(12), dp(12), dp(12))
-        content.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
+        parent.addView(this, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(if(wideTouch) 10 else 14) })
         if(heading != null) addView(text(heading, 17f).apply { setTypeface(typeface, Typeface.BOLD) })
     }
     private fun button(label: String, parent: LinearLayout = content, primary: Boolean = false, action: () -> Unit) = Button(this).apply {
@@ -189,8 +239,8 @@ class PhoneActivity : Activity() {
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
     private fun posterGrid(items: List<JSONObject>, parent: LinearLayout) {
-        val columns = if(resources.configuration.fontScale > 1.3f) 1 else if(resources.configuration.screenWidthDp >= 600) 3 else 2
-        val width = (resources.configuration.screenWidthDp - 36 - 24 - columns * 8) / columns
+        val columns = if(resources.configuration.fontScale > 1.3f) {if(wideTouch) 2 else 1} else if(wideTouch) ((touchContentWidthDp-24)/150).coerceIn(3,6) else if(touchContentWidthDp >= 560) 3 else 2
+        val width = (touchContentWidthDp - 24 - columns * 8) / columns
         for(chunk in items.chunked(columns)) {
             val row = buttonRow(parent)
             for(item in chunk) {
@@ -202,7 +252,7 @@ class PhoneActivity : Activity() {
                     setOnClickListener { if(!busy) detail(item) }
                 }
                 row.addView(card, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), dp(8), dp(4), dp(4)) })
-                poster(card, item.optString("pic"), -1, dp((width * if(item.has("favoriteEntry")) 1.2f else 1.4f).toInt()))
+                poster(card, item.optString("pic"), -1, dp((width * if(wideTouch || item.has("favoriteEntry")) 1.2f else 1.4f).toInt()))
                 val titleRow=buttonRow(card).apply {gravity=Gravity.CENTER_VERTICAL}
                 titleRow.addView(text(item.optString("name"),16f).apply {maxLines=2;setPadding(dp(8),dp(8),dp(4),0);setTypeface(typeface,Typeface.BOLD)},LinearLayout.LayoutParams(0,-2,1f))
                 if(item.has("favoriteEntry")) {
@@ -217,7 +267,7 @@ class PhoneActivity : Activity() {
     }
     private fun hero(parent: LinearLayout, name: String, cover: String, subtitle: String) {
         val row = buttonRow(parent)
-        poster(row, cover, dp(94), dp(138))
+        poster(row, cover, dp(if(wideTouch) 78 else 94), dp(if(wideTouch) 110 else 138))
         val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0) }
         row.addView(info, LinearLayout.LayoutParams(0, -2, 1f))
         info.addView(text(name, 20f).apply { setTypeface(typeface, Typeface.BOLD) })
@@ -240,7 +290,7 @@ class PhoneActivity : Activity() {
                 }
                 notice.text = message; feedback?.text = message
             } }
-            finally { if(ticket == generation) busy = false }
+            finally { if(ticket == generation) busy = false; if(pendingLayout && !busy && !batchRunning) rebuildTouchLayout() }
         }
     }
     private suspend fun request(path: String, body: JSONObject? = null, method: String = if(body == null) "GET" else "POST"): JSONObject =
@@ -383,7 +433,7 @@ class PhoneActivity : Activity() {
     }
     private fun home() {
         screen("home","片刻")
-        (content.getChildAt(0) as? TextView)?.apply {
+        if(!wideTouch) (content.getChildAt(0) as? TextView)?.apply {
             textSize=32f; setPadding(dp(2),dp(10),0,dp(16))
             paint.shader=android.graphics.LinearGradient(0f,0f,dp(180).toFloat(),0f,intArrayOf(Color.rgb(255,147,191),accentColor),null,android.graphics.Shader.TileMode.CLAMP)
         }
@@ -443,13 +493,14 @@ class PhoneActivity : Activity() {
         if(items.length()==0) {button("重新加载",holder) {home()};return}
         val carousel=HorizontalScrollView(this).apply {isHorizontalScrollBarEnabled=false;clipToPadding=false}
         val row=LinearLayout(this);carousel.addView(row);holder.addView(carousel)
-        for(i in 0 until minOf(items.length(),12))recommendationCard(items.getJSONObject(i),row,132)
+        for(i in 0 until minOf(items.length(),12))recommendationCard(items.getJSONObject(i),row,if(wideTouch) (touchContentWidthDp/5).coerceIn(104,132) else 132)
     }
     private fun recommendationList(category: String, items: JSONArray) {
+        recommendationListCategory=category;recommendationListItems=items
         screen("recommendations",RecommendationRepository.label(category))
         button("返回首页") {home()}
-        val columns=if(resources.configuration.screenWidthDp>=600)4 else 3
-        val width=(resources.configuration.screenWidthDp-36-columns*10)/columns
+        val columns=if(wideTouch) (touchContentWidthDp/140).coerceIn(3,6) else if(touchContentWidthDp>=560)4 else 3
+        val width=(touchContentWidthDp-columns*10)/columns
         (0 until items.length()).toList().chunked(columns).forEach {indices ->
             val row=buttonRow(content).apply {setPadding(0,dp(12),0,0)}
             indices.forEach {recommendationCard(items.getJSONObject(it),row,width)}
@@ -518,14 +569,17 @@ class PhoneActivity : Activity() {
     }
     private fun settingsScreen() {
         screen("settings","设置")
-        val sourcesBox=section("内容来源")
+        val settingsRow=if(twoTouchColumns) buttonRow(content) else null
+        fun column(): LinearLayout = if(settingsRow==null) content else LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;settingsRow.addView(this,LinearLayout.LayoutParams(0,-2,1f).apply {setMargins(dp(4),0,dp(4),0)})}
+        val first=column();val second=if(twoTouchColumns) column() else first
+        val sourcesBox=section("内容来源",first)
         setting(sourcesBox,"影视来源","电影、电视剧") {login()}
         setting(sourcesBox,"直播订阅","电视频道") {liveSourcesScreen()}
-        val playback=section("播放与显示")
+        val playback=section("播放与显示",second)
         Switch(this).apply {text="首页推荐";setTextColor(Color.WHITE);setPadding(dp(4),dp(12),dp(4),dp(12));isChecked=recommendations.enabled();playback.addView(this);setOnCheckedChangeListener {_,enabled->recommendations.setEnabled(enabled)}}
         setting(playback,"投屏设备",device?.name ?: "选择接收设备") {chooseDevice()}
         if(queue!=null) setting(playback,"投屏控制",castTitle) {controls()}
-        val app=section("应用")
+        val app=section("应用",first)
         setting(app,"检查更新",BuildConfig.VERSION_NAME) {startActivity(android.content.Intent(this,UpdateActivity::class.java))}
         setting(app,"关于片刻") {PiankeUi.about(this)}
         content.addView(text("来源、收藏和观看记录保存在这台设备上。",13f).apply {setTextColor(secondaryColor);setPadding(dp(3),dp(18),0,0)})
@@ -582,9 +636,12 @@ class PhoneActivity : Activity() {
         if(selectedChannel!=null) {
             val selected=selectedChannel
             val preview=section()
-            preview.addView(text(selected.optString("name"),25f).apply {setTypeface(typeface,Typeface.BOLD)})
-            preview.addView(text("${selected.optString("group")} · 直播",14f).apply {setTextColor(secondaryColor)})
+            if(wideTouch) preview.orientation=LinearLayout.HORIZONTAL
+            val info=if(wideTouch) LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;preview.addView(this,LinearLayout.LayoutParams(0,-2,1f))} else preview
+            info.addView(text(selected.optString("name"),if(wideTouch) 21f else 25f).apply {setTypeface(typeface,Typeface.BOLD)})
+            info.addView(text("${selected.optString("group")} · 直播",14f).apply {setTextColor(secondaryColor)})
             val actions=buttonRow(preview)
+            if(wideTouch) actions.layoutParams=LinearLayout.LayoutParams(dp(230),-2)
             rowButton(actions,"播放直播") {openLive(selected)}
             rowButton(actions,"投屏") {castLive(selected)}
         }
@@ -604,7 +661,7 @@ class PhoneActivity : Activity() {
         val filtered=(0 until all.length()).map {all.getJSONObject(it)}.filter {liveGroup=="全部"||(liveGroup=="收藏"&&liveRepository.favorite(it.getString("id")))||it.optString("group")==liveGroup}
         content.addView(text("${filtered.size} 个频道",13f).apply {setTextColor(secondaryColor)})
         if(filtered.isEmpty())content.addView(text("还没有收藏频道，勾选频道旁的收藏即可。",14f))
-        val columns=if(resources.configuration.fontScale>1.3f)1 else 2
+        val columns=if(resources.configuration.fontScale>1.3f) {if(wideTouch)2 else 1} else if(wideTouch)(touchContentWidthDp/190).coerceIn(3,5) else 2
         for(chunk in filtered.take(liveVisible).chunked(columns)) {
             val row=buttonRow(content)
             for(channel in chunk) {
@@ -731,7 +788,10 @@ class PhoneActivity : Activity() {
         rowButton(navigation, "返回选片") { home() }.apply {background=surface(Color.TRANSPARENT);setTextColor(secondaryColor);gravity=Gravity.START or Gravity.CENTER_VERTICAL}
         if(query.isNotEmpty()) rowButton(navigation, "搜索结果") { searchScreen() }
         if(queue != null) rowButton(navigation, "投屏控制") { controls() }
-        val info = section()
+        val split=if(twoTouchColumns) buttonRow(content).apply {tag="touch-detail-columns";gravity=Gravity.TOP} else null
+        fun detailColumn(weight: Float): LinearLayout = if(split==null) content else LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;split.addView(this,LinearLayout.LayoutParams(0,-2,weight).apply {setMargins(dp(4),0,dp(4),0)})}
+        val infoParent=detailColumn(.42f);val episodeParent=if(twoTouchColumns) detailColumn(.58f) else infoParent
+        val info = section(parent=infoParent)
         hero(info, title, detailInfo.optString("cover").ifEmpty { selected.optString("pic") }, "${selected.optString("sourceName")} · 共 ${episodes.length()} 集")
         val favoriteEntries = client.local.favorites("/api/favorites",null,"GET").optJSONArray("items") ?: JSONArray()
         val favoriteId=(0 until favoriteEntries.length()).map { favoriteEntries.getJSONObject(it) }
@@ -760,11 +820,12 @@ class PhoneActivity : Activity() {
                 details(); notice.text = if(listed) "已移出播放列表，观看进度保留" else "已加入播放列表"
             }
         }
-        rowButton(secondary,"投屏") {if(device==null)chooseDevice {cast(resumeIndex)} else cast(resumeIndex)}
+        val castActions=if(twoTouchColumns && touchContentWidthDp<850) buttonRow(info) else secondary
+        rowButton(castActions,"投屏") {if(device==null)chooseDevice {cast(resumeIndex)} else cast(resumeIndex)}
         val desc=detailInfo.optString("desc")
         if(desc.isNotBlank()) info.addView(text(android.text.Html.fromHtml(desc).toString(),14f).apply {maxLines=4;setTextColor(secondaryColor)})
-        val box = section("选择剧集 · 共 ${episodes.length()} 集")
-        val columns = if(resources.configuration.fontScale > 1.3f) 2 else 3
+        val box = section("选择剧集 · 共 ${episodes.length()} 集",episodeParent)
+        val columns = if(resources.configuration.fontScale > 1.3f) 2 else if(twoTouchColumns) ((touchContentWidthDp*.58f-32)/90).toInt().coerceIn(3,6) else 3
         for(start in 0 until episodes.length() step columns) {
             val row = buttonRow(box)
             for(i in start until minOf(start + columns, episodes.length())) rowButton(row, "第 ${i+1} 集") {
@@ -813,7 +874,7 @@ class PhoneActivity : Activity() {
         val first=history.getJSONObject(0);val item=first.getJSONObject("item")
         val hero=section("接着看")
         val art=FrameLayout(this).apply {background=surface();clipToOutline=true}
-        hero.addView(art,LinearLayout.LayoutParams(-1,dp(170)))
+        hero.addView(art,LinearLayout.LayoutParams(-1,dp(if(wideTouch) 124 else 170)))
         ImageView(this).apply {scaleType=ImageView.ScaleType.CENTER_CROP;art.addView(this,FrameLayout.LayoutParams(-1,-1));posters.load(this,client,item.optString("pic"))}
         val copy=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL;setPadding(dp(12),dp(12),dp(12),dp(12));background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(0x00101723,0xee101723.toInt()))}
         art.addView(copy,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))

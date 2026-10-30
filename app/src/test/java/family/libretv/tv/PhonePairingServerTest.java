@@ -35,7 +35,7 @@ public class PhonePairingServerTest {
         AtomicReference<String> submitted=new AtomicReference<>();
         try (PhonePairingServer server=new PhonePairingServer("127.0.0.1","http://nas.example:8899/",(origin,password)->submitted.set(origin+" "+password))) {
             String page=request(server,"GET",path(server),"","");
-            assertTrue(page.startsWith("HTTP/1.1 200")); assertTrue(page.contains("Cache-Control: no-store"));
+            assertTrue("Unexpected response: "+page.substring(0,Math.min(160,page.length())),page.startsWith("HTTP/1.1 200")); assertTrue(page.contains("Cache-Control: no-store"));
             assertTrue(page.contains("type=password")); assertFalse(server.url().contains("nas.example"));
             assertTrue(request(server,"GET","/unknown","","").startsWith("HTTP/1.1 404"));
             String body="nas="+NasClient.encode("http://nas.example:8899/")+"&password="+NasClient.encode("fixture +&密码");

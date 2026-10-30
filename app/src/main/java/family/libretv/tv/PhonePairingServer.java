@@ -134,7 +134,7 @@ final class PhonePairingServer implements AutoCloseable {
     }
     private static String value(Map<String,String> map,String key,String fallback) { String value=map.get(key); return value==null ? fallback : value; }
     private String form() {
-        if(sourceSubmission!=null) return "<h1>添加视频来源</h1><p>填写订阅地址或 sources JSON，然后在电视确认。</p><form method=post action=\"/"+token+"/config\"><textarea name=config required rows=8 style=\"width:100%;font:inherit\" maxlength=100000></textarea><button>发送到电视</button></form>";
+        if(sourceSubmission!=null) return SourceImportForm.html("/"+token+"/config", token);
 
         return "<h1>连接你的 NAS</h1><p>在手机上填写，然后在电视上确认。</p><form method=post action=\"/"+token+"/config\" autocomplete=off>"
             +"<label for=nas>NAS 地址</label><input id=nas name=nas type=url required maxlength=240 placeholder=\"http://192.168.1.10:8899/\" value=\""+escape(defaultNas)+"\" autocapitalize=off spellcheck=false>"
@@ -142,13 +142,13 @@ final class PhonePairingServer implements AutoCloseable {
             +"<p>连接成功后，密码将加密保存在这台电视上，用于自动登录。手机页面不会保存密码。</p><button type=submit>发送到电视</button></form>";
     }
     private static String escape(String value) { return value.replace("&","&amp;").replace("\"","&quot;").replace("<","&lt;").replace(">","&gt;"); }
-    private static void reply(OutputStream out,int status,String text) throws IOException {
+    private void reply(OutputStream out,int status,String text) throws IOException {
         String html="<!doctype html><html lang=zh-CN><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>片刻 手机配置</title>"
-            +"<style>body{margin:0;background:#101723;color:#e4eef6;font:17px system-ui,sans-serif;padding:28px 20px}main{max-width:480px;margin:5vh auto}h1{font-size:30px}p{line-height:1.7;color:#afc1ce}label{display:block;margin:24px 0 9px}input,button{box-sizing:border-box;width:100%;padding:15px;border-radius:10px;font:inherit;border:1px solid #48606e}input{background:#233543;color:white}button{margin-top:18px;background:#f15b9b;color:#101723;font-weight:700}input:focus{outline:2px solid #f15b9b}</style><main>"+text+"</main></html>";
+            +"<style>body{margin:0;background:#101723;color:#e4eef6;font:17px system-ui,sans-serif;padding:28px 20px}main{max-width:480px;margin:5vh auto}h1{font-size:30px}p{line-height:1.7;color:#afc1ce}label{display:block;margin:24px 0 9px}input,textarea,select,button{box-sizing:border-box;width:100%;padding:15px;border-radius:10px;font:inherit;border:1px solid #48606e}input,textarea,select{background:#233543;color:white}button{margin-top:18px;background:#f15b9b;color:#101723;font-weight:700}input:focus{outline:2px solid #f15b9b}</style><main>"+text+"</main></html>";
         byte[] data=html.getBytes(StandardCharsets.UTF_8);
         String headers="HTTP/1.1 "+status+" Response\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: "+data.length
             +"\r\nConnection: close\r\nCache-Control: no-store\r\nReferrer-Policy: same-origin\r\nX-Content-Type-Options: nosniff\r\n"
-            +"Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'\r\n\r\n";
+            +"Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-"+token+"'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'\r\n\r\n";
         out.write(headers.getBytes(StandardCharsets.US_ASCII)); out.write(data); out.flush();
     }
     @Override public void close() {

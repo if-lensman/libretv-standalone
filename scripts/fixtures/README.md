@@ -18,4 +18,4 @@ ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=24 -t 60 -c:v libx264 -pix_fmt yu
 python3 scripts/fixtures/fixture-server.py --media-dir research/fixtures
 ```
 
-API30手机运行 `PlayerDesignFlowTest#testPhonePortraitLandscapeSeekEpisodesAndScreenshots`，TV布局模拟器运行 `#testTvFocusRemoteSeekAndScreenshot`。测试通过 UiAutomation 截图至目标 App 内部 `files/player-*.png`，可用 `adb exec-out run-as family.libretv.standalone cat files/<文件名>` 获取原始PNG。仅在测试模拟器运行；用例会临时修改并恢复本机库/播放设置。
+API30手机运行 `PlayerDesignFlowTest#testPhonePortraitLandscapeSeekEpisodesAndScreenshots`，TV布局模拟器运行 `#testTvRemoteSeekSpeedAndTwoRowControls`。测试通过 UiAutomation 截图至目标 App 内部 `files/player-*.png`，可用 `adb exec-out run-as family.libretv.standalone cat files/<文件名>` 获取原始PNG。仅在测试模拟器运行；用例会临时修改并恢复本机库/播放设置。

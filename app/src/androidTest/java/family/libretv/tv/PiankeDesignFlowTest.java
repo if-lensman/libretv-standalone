@@ -49,6 +49,49 @@ public final class PiankeDesignFlowTest extends TestCase {
     private void choice(int index){instrument.runOnMainSync(()->{AlertDialog d=dialog();ListView list=d.getListView();list.performItemClick(list.getChildAt(index),index,list.getAdapter().getItemId(index));});instrument.waitForIdleSync();}
     private void capture(String name)throws Exception{Thread.sleep(800);Bitmap image=instrument.getUiAutomation().takeScreenshot();try(java.io.FileOutputStream out=context.openFileOutput(name,0)){image.compress(Bitmap.CompressFormat.PNG,100,out);}try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(context.getExternalFilesDir(null),name))){image.compress(Bitmap.CompressFormat.PNG,100,out);}image.recycle();}
     private void fill(String hint,String value){for(View v:views())if(v instanceof EditText&&hint.contentEquals(((EditText)v).getHint())){instrument.runOnMainSync(()->((EditText)v).setText(value));return;}fail("Missing input "+hint);}
+    private Object phoneField(String name){try{java.lang.reflect.Field f=PhoneActivity.class.getDeclaredField(name);f.setAccessible(true);return f.get(activity);}catch(Exception e){throw new RuntimeException(e);}}
+    private View tagged(String tag){for(View v:views())if(tag.equals(v.getTag()))return v;return null;}
+    private String shell(String command)throws Exception {
+        try(android.os.ParcelFileDescriptor fd=instrument.getUiAutomation().executeShellCommand(command);java.io.FileInputStream in=new java.io.FileInputStream(fd.getFileDescriptor());java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){
+            byte[] bytes=new byte[1024];int n;while((n=in.read(bytes))!=-1)out.write(bytes,0,n);return out.toString("UTF-8").trim();
+        }
+    }
+    private void systemRotation(int rotation,boolean landscape)throws Exception {
+        shell("settings put system accelerometer_rotation 0");shell("settings put system user_rotation "+rotation);
+        long end=SystemClock.uptimeMillis()+8000;
+        while(SystemClock.uptimeMillis()<end){if(tagged(landscape?"touch-landscape":"touch-portrait")!=null){instrument.waitForIdleSync();Thread.sleep(200);return;}Thread.sleep(50);}fail("System rotation did not relayout touch UI");
+    }
+    private void contentClick(String text){for(View v:views())if(v instanceof Button&&text.contentEquals(((Button)v).getText())&&!String.valueOf(v.getContentDescription()).contains("导航 ·")){instrument.runOnMainSync(v::performClick);instrument.waitForIdleSync();return;}fail("Missing content button "+text);}
+    public void testLandscapeTouchLayoutAndSystemRotationPreservePageAndDrafts()throws Exception {
+        String oldAuto=shell("settings get system accelerometer_rotation"),oldRotation=shell("settings get system user_rotation");
+        try {
+            JSONArray recommendations=new JSONArray();for(int i=1;i<=8;i++)recommendations.put(new JSONObject().put("id",i).put("title",item((i-1)%4+1).getString("name")).put("cover",ROOT+"/pianke-cover.jpg").put("rating","8.6"));
+            SharedPreferences.Editor prefs=context.getSharedPreferences("recommendations",0).edit().putBoolean("enabled",true);
+            for(String category:new String[]{"movie","top"})prefs.putString("items-"+category,recommendations.toString()).putLong("updated-"+category,System.currentTimeMillis());prefs.commit();
+            launch(PhoneActivity.class,null);assertNotNull("Start on a landscape display",tagged("touch-landscape"));
+            assertEquals(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER,activity.getRequestedOrientation());
+            for(String label:new String[]{"首页","搜索","直播","历史","设置"})assertTrue(views().stream().anyMatch(v->("侧边导航 · "+label).contentEquals(String.valueOf(v.getContentDescription()))));
+            capture("touch-home-landscape.png");click("设置");assertEquals("settings",phoneField("page"));capture("touch-settings-landscape.png");
+            click("影视来源");fill("源名称","旋转保留草稿");fill("来源地址",ROOT+"/example-not-submitted");
+            Activity original=activity;int rotation=activity.getWindowManager().getDefaultDisplay().getRotation();
+            systemRotation((rotation+1)%4,false);assertSame(original,activity);assertEquals("config",phoneField("page"));
+            assertTrue(views().stream().anyMatch(v->v instanceof EditText&&"旋转保留草稿".contentEquals(((EditText)v).getText())));
+            assertTrue(views().stream().anyMatch(v->v instanceof EditText&&(ROOT+"/example-not-submitted").contentEquals(((EditText)v).getText())));
+            systemRotation(rotation,true);assertEquals("config",phoneField("page"));assertNotNull(tagged("touch-landscape"));
+            click("搜索");fill("搜索电影、剧集","山海");contentClick("搜索");await("搜索结果 · 1");capture("touch-search-landscape.png");
+            Object results=phoneField("results");systemRotation((rotation+1)%4,false);assertEquals("search",phoneField("page"));assertSame(results,phoneField("results"));
+            systemRotation(rotation,true);assertEquals("search",phoneField("page"));assertSame(results,phoneField("results"));
+            View cover=views().stream().filter(v->"山海之间，演示影视来源".contentEquals(String.valueOf(v.getContentDescription()))).findFirst().orElse(null);assertNotNull(cover);instrument.runOnMainSync(cover::performClick);await("选择剧集 · 共 24 集");assertNotNull(tagged("touch-detail-columns"));capture("touch-detail-landscape.png");
+            Object episodes=phoneField("episodes");systemRotation((rotation+1)%4,false);assertEquals("detail",phoneField("page"));assertNull(tagged("touch-detail-columns"));assertSame(episodes,phoneField("episodes"));
+            systemRotation(rotation,true);assertEquals("detail",phoneField("page"));assertNotNull(tagged("touch-detail-columns"));assertSame(episodes,phoneField("episodes"));
+            click("历史");await("接着看");capture("touch-history-landscape.png");click("收藏");await("4 部收藏");capture("touch-favorites-landscape.png");
+            new LiveRepository(context).importPlaylist("横屏直播演示",LocalRepository.fetch(ROOT+"/live/list"));
+            click("直播");await("测试直播一");capture("touch-live-landscape.png");assertEquals("live",phoneField("page"));
+            assertEquals(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER,activity.getRequestedOrientation());
+        } finally {
+            shell("settings put system user_rotation "+oldRotation);shell("settings put system accelerometer_rotation "+oldAuto);
+        }
+    }
     public void testPhoneHistoryFavoritesPlaylistAndDetails()throws Exception{
         launch(PhoneActivity.class,null);click("历史");await("接着看");
         assertEquals(3,views().stream().filter(v->v instanceof ProgressBar).count()); // Unknown duration has no fabricated ratio.

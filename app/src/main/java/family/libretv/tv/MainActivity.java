@@ -70,7 +70,11 @@ public final class MainActivity extends Activity {
     private PlayerView playerView;
     private TextView playbackStatus;
     private LinearLayout playerTop, playerControls;
-    private Button playToggle, subtitleButton;
+    private Button playToggle, subtitleButton, speedButton;
+    private TextView seekPreview;
+    private int tvSeekKey=KeyEvent.KEYCODE_UNKNOWN;
+    private long lastTvSeekEvent;
+    private final Runnable clearSeekPreview=()->{if(seekPreview!=null)seekPreview.setVisibility(View.GONE);};
     private SubtitleMenu subtitleMenu;
     private android.app.AlertDialog playerOptions;
     private JSONObject detailSource;
@@ -80,7 +84,7 @@ public final class MainActivity extends Activity {
     private ProgressBar playbackProgress;
     private boolean controlsVisible, playerHasFrame;
     private final Runnable hidePlayerControls = () -> {
-        if (screen == Screen.PLAYER && player != null && player.isPlaying() && (subtitleMenu == null || !subtitleMenu.isShowing())) hideControls();
+        if (screen == Screen.PLAYER && player != null && player.isPlaying() && (subtitleMenu == null || !subtitleMenu.isShowing()) && (playerOptions == null || !playerOptions.isShowing())) hideControls();
     };
     private long position;
     private boolean playWhenReady = true;
@@ -92,7 +96,7 @@ public final class MainActivity extends Activity {
                 long duration = player.getDuration();
                 playbackProgress.setProgress(duration > 0 ? (int) (player.getCurrentPosition() * 1000 / duration) : 0);
                 playToggle.setText(player.getPlayWhenReady() ? "暂停" : "播放");playToggle.setContentDescription(playToggle.getText());
-                PlayerStyle.setIcon(playToggle,player.getPlayWhenReady()?"pause":"play",26);
+                PlayerStyle.setTvIcon(playToggle,player.getPlayWhenReady()?"pause":"play",22);
                 if(SystemClock.elapsedRealtime()-lastProgressSave>=5000) { saveTvProgress(); lastProgressSave=SystemClock.elapsedRealtime(); }
                 main.postDelayed(this, 1000);
             }
@@ -105,6 +109,7 @@ public final class MainActivity extends Activity {
                 && !getIntent().hasCategory(android.content.Intent.CATEGORY_LEANBACK_LAUNCHER)) {
             startActivity(new android.content.Intent(this, PhoneActivity.class)); finish(); return;
         }
+        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         if(!getIntent().hasExtra("tvDestination")){
             startActivity(new android.content.Intent(this,TvHomeActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP|android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP));finish();return;
         }
@@ -803,24 +808,31 @@ public final class MainActivity extends Activity {
         message = label("正在连接…", 15); playerTop.addView(message);
         stage.addView(playerTop, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
         playerControls = new LinearLayout(this); playerControls.setOrientation(LinearLayout.VERTICAL);
-        playerControls.setPadding(dp(40), dp(32), dp(40), dp(20)); playerControls.setBackgroundResource(R.drawable.player_bottom);
+        playerControls.setPadding(dp(40), dp(16), dp(40), dp(12)); playerControls.setBackgroundResource(R.drawable.player_bottom);
         playbackStatus = label("正在缓冲", 16); playerControls.addView(playbackStatus);
         playbackProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         playbackProgress.setMax(1000); playbackProgress.setProgressTintList(ColorStateList.valueOf(PlayerStyle.PINK));playbackProgress.setProgressBackgroundTintList(ColorStateList.valueOf(0x66aab5c5));
-        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(-1, dp(5)); progressParams.setMargins(dp(5), dp(4), dp(5), dp(16));
+        LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(-1, dp(5)); progressParams.setMargins(dp(5), dp(4), dp(5), dp(8));
         playerControls.addView(playbackProgress, progressParams);
         LinearLayout controls = new LinearLayout(this);playerControls.addView(controls);
         playToggle = playerAction(controls, "暂停", "pause", () -> {togglePlay();showControls(false);});
+        playerAction(controls,"快退 10秒","key-left",()->seekWithPreview(-10000));
+        playerAction(controls,"快进 10秒","key-right",()->seekWithPreview(10000));
         Button previous=playerAction(controls,"上一集","previous",()->switchTvEpisode(episodeIndex-1));previous.setEnabled(episodeIndex>0);
         Button next=playerAction(controls,"下一集","next",()->switchTvEpisode(episodeIndex+1));next.setEnabled(episodeIndex+1<episodes.length());
-        subtitleButton=playerAction(controls,"字幕","subtitle",()->{if(subtitleMenu!=null){main.removeCallbacks(hidePlayerControls);subtitleMenu.show();}});
-        playerAction(controls,"更多","more",this::showPlayerOptions);
-        playerAction(controls,"返回选集","episodes",this::leavePlayer);
+        LinearLayout settings = new LinearLayout(this);playerControls.addView(settings);
+        speedButton=playerAction(settings,"倍速 "+tvPlaybackSpeed()+"×","speed",this::chooseTvSpeed);
+        subtitleButton=playerAction(settings,"字幕","subtitle",()->{if(subtitleMenu!=null){main.removeCallbacks(hidePlayerControls);subtitleMenu.show();}});
+        playerAction(settings,"更多","more",this::showPlayerOptions);
+        playerAction(settings,"返回选集","episodes",this::leavePlayer);
         autoNext=new CheckBox(this);autoNext.setText("自动下一集");autoNext.setTextColor(Color.WHITE);
         autoNext.setChecked(getPreferences(MODE_PRIVATE).getBoolean("autoNext",true));
         autoNext.setOnCheckedChangeListener((v,on)->getPreferences(MODE_PRIVATE).edit().putBoolean("autoNext",on).apply());
-        TextView hint=label("方向键选择 · 确认执行 · 返回收起",14);hint.setTextColor(PlayerStyle.MUTED);hint.setGravity(Gravity.CENTER);hint.setPadding(0,dp(14),0,0);playerControls.addView(hint);
+        TextView hint=label("收起时：左右快退 / 快进，长按加速 · 上下唤出 · 返回收起",13);hint.setTextColor(PlayerStyle.MUTED);hint.setGravity(Gravity.CENTER);hint.setPadding(0,dp(8),0,0);playerControls.addView(hint);
         stage.addView(playerControls, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
+        seekPreview=label("",20);seekPreview.setGravity(Gravity.CENTER);seekPreview.setPadding(dp(24),dp(12),dp(24),dp(12));
+        seekPreview.setBackground(PlayerStyle.surface(0xcc101723,12,this));seekPreview.setVisibility(View.GONE);
+        stage.addView(seekPreview,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
         setContentView(stage); controlsVisible = true;
         playerView.setOnClickListener(v -> { if (controlsVisible) hideControls(); else showControls(true); });
         playerView.setOnKeyListener((v, key, event) -> {
@@ -833,8 +845,25 @@ public final class MainActivity extends Activity {
         if (!stopped) startPlayer();
     }
     private Button playerAction(LinearLayout row,String text,String icon,Runnable run){
-        Button b=PlayerStyle.action(this,text,icon,true);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(76),1);p.setMargins(dp(4),dp(4),dp(4),dp(4));row.addView(b,p);
+        Button b=PlayerStyle.action(this,text,icon,true);b.setPadding(dp(8),dp(6),dp(8),dp(6));b.setTextSize(16);PlayerStyle.setTvIcon(b,icon,22);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(48),1);p.setMargins(dp(4),dp(4),dp(4),dp(4));row.addView(b,p);
         b.setOnClickListener(v->run.run());b.setOnFocusChangeListener((v,focused)->{v.setScaleX(focused?1.04f:1f);v.setScaleY(focused?1.04f:1f);if(focused){main.removeCallbacks(hidePlayerControls);main.postDelayed(hidePlayerControls,3500);}});return b;
+    }
+    private float tvPlaybackSpeed(){return getPreferences(MODE_PRIVATE).getFloat("playbackSpeed",1f);}
+    private void chooseTvSpeed(){
+        main.removeCallbacks(hidePlayerControls);
+        float[] values={.75f,1f,1.25f,1.5f,2f};String[] labels={"0.75×","1×","1.25×","1.5×","2×"};
+        int selected=1;for(int i=0;i<values.length;i++)if(values[i]==tvPlaybackSpeed())selected=i;
+        playerOptions=new android.app.AlertDialog.Builder(this).setTitle("播放速度").setSingleChoiceItems(labels,selected,(d,which)->{
+            getPreferences(MODE_PRIVATE).edit().putFloat("playbackSpeed",values[which]).apply();
+            if(player!=null)player.setPlaybackSpeed(values[which]);
+            speedButton.setText("倍速 "+values[which]+"×");speedButton.setContentDescription(speedButton.getText());d.dismiss();
+        }).setOnDismissListener(d->{if(screen==Screen.PLAYER){showControls(false);speedButton.requestFocus();}}).show();
+    }
+    private void seekWithPreview(long delta){
+        if(player==null || !player.isCurrentMediaItemSeekable())return;
+        seek(delta);saveTvProgress();
+        seekPreview.setText((delta<0?"快退 ":"快进 ")+Math.abs(delta/1000)+" 秒\n"+time(player.getCurrentPosition())+" / "+time(player.getDuration()));
+        seekPreview.setVisibility(View.VISIBLE);main.removeCallbacks(clearSeekPreview);main.postDelayed(clearSeekPreview,1200);
     }
     private void showPlayerOptions(){
         main.removeCallbacks(hidePlayerControls);
@@ -895,7 +924,7 @@ public final class MainActivity extends Activity {
                 playbackStatus.setText("播放已停止"); showControls(true); main.removeCallbacks(hidePlayerControls);
             }
             @Override public void onRenderedFirstFrame() {
-                playerHasFrame = true; setNotice("方向键唤出操作 · 确认执行 · 返回收起 / 选集"); showControls(false);
+                if(!playerHasFrame){playerHasFrame = true;setNotice("左右快退 / 快进，长按加速 · 上下唤出操作 · 返回收起 / 选集");showControls(false);}
             }
             @Override public void onIsPlayingChanged(boolean playing) {
                 if (playing) { main.removeCallbacks(hidePlayerControls); main.postDelayed(hidePlayerControls, 3500); }
@@ -912,6 +941,7 @@ public final class MainActivity extends Activity {
                 }
             }
         });
+        player.setPlaybackSpeed(tvPlaybackSpeed());
         player.setMediaItem(item.build(), position); player.prepare(); player.setPlayWhenReady(playWhenReady);
         playerView.setKeepScreenOn(true); main.post(ticker);
     }
@@ -929,6 +959,7 @@ public final class MainActivity extends Activity {
         if(player!=null)new PlaybackStore(this).save(detailSource,selected,title,episodeIndex,player.getCurrentPosition(),player.getDuration());
     }
     private void releasePlayer() {
+        tvSeekKey=KeyEvent.KEYCODE_UNKNOWN;main.removeCallbacks(clearSeekPreview);if(seekPreview!=null)seekPreview.setVisibility(View.GONE);
         if(playerOptions!=null){playerOptions.dismiss();playerOptions=null;}
         if(subtitleMenu!=null) { subtitleMenu.close();subtitleMenu=null; }
         main.removeCallbacks(ticker); main.removeCallbacks(hidePlayerControls);
@@ -939,20 +970,33 @@ public final class MainActivity extends Activity {
     }
     private void leavePlayer() { releasePlayer(); showDetail(); }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        if (screen == Screen.PLAYER && player != null && event.getAction() == KeyEvent.ACTION_DOWN) {
-            if (controlsVisible) { main.removeCallbacks(hidePlayerControls); main.postDelayed(hidePlayerControls, 3500); }
+        if(screen==Screen.PLAYER && player!=null){
             int key=event.getKeyCode();
-            boolean direction=key==KeyEvent.KEYCODE_DPAD_LEFT||key==KeyEvent.KEYCODE_DPAD_RIGHT||key==KeyEvent.KEYCODE_DPAD_UP||key==KeyEvent.KEYCODE_DPAD_DOWN;
-            if(direction && (!controlsVisible || !(getCurrentFocus() instanceof Button))) {
-                showControls(true);return true;
+            boolean horizontal=key==KeyEvent.KEYCODE_DPAD_LEFT||key==KeyEvent.KEYCODE_DPAD_RIGHT;
+            // Keep the entire hidden-control press (including key-up) out of focus navigation.
+            if(horizontal && (tvSeekKey==key || !controlsVisible)){
+                if(event.getAction()==KeyEvent.ACTION_UP){tvSeekKey=KeyEvent.KEYCODE_UNKNOWN;return true;}
+                if(event.getAction()==KeyEvent.ACTION_DOWN){
+                    if(event.getRepeatCount()==0){tvSeekKey=key;lastTvSeekEvent=event.getEventTime();seekWithPreview(key==KeyEvent.KEYCODE_DPAD_LEFT?-10000:10000);}
+                    else if(!controlsVisible && event.getEventTime()-lastTvSeekEvent>=250){
+                        lastTvSeekEvent=event.getEventTime();long held=event.getEventTime()-event.getDownTime();
+                        long step=held>=2000?60000:30000;seekWithPreview(key==KeyEvent.KEYCODE_DPAD_LEFT?-step:step);
+                    }
+                }
+                return true;
             }
-            if(key==KeyEvent.KEYCODE_MENU){showControls(true);return true;}
-            if((key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER)&&(!controlsVisible||getCurrentFocus()==playerView)){
-                if(event.getRepeatCount()==0)togglePlay();showControls(true);return true;
+            if(event.getAction()==KeyEvent.ACTION_DOWN){
+                if (controlsVisible) { main.removeCallbacks(hidePlayerControls); main.postDelayed(hidePlayerControls, 3500); }
+                boolean direction=horizontal||key==KeyEvent.KEYCODE_DPAD_UP||key==KeyEvent.KEYCODE_DPAD_DOWN;
+                if(direction && (!controlsVisible || !(getCurrentFocus() instanceof Button))) {showControls(true);return true;}
+                if(key==KeyEvent.KEYCODE_MENU){showControls(true);return true;}
+                if((key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_ENTER)&&(!controlsVisible||getCurrentFocus()==playerView)){
+                    if(event.getRepeatCount()==0)togglePlay();showControls(true);return true;
+                }
+                if(key==KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE){if(event.getRepeatCount()==0)togglePlay();showControls(false);return true;}
+                if(key==KeyEvent.KEYCODE_MEDIA_PLAY){player.play();return true;}
+                if(key==KeyEvent.KEYCODE_MEDIA_PAUSE){player.pause();return true;}
             }
-            if (event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) { togglePlay(); showControls(false); return true; }
-            if (event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PLAY) { player.play(); return true; }
-            if (event.getKeyCode() == KeyEvent.KEYCODE_MEDIA_PAUSE) { player.pause(); return true; }
         }
         return super.dispatchKeyEvent(event);
     }

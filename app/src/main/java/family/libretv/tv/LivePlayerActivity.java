@@ -52,6 +52,7 @@ public final class LivePlayerActivity extends Activity {
     private long attemptStarted,firstFrameMs;
     private Runnable retryTask;
     private boolean tvRemote;
+    private int entryOrientation;
     private String initialError="请先导入直播频道";
     private final Runnable watchdog=new Runnable(){
         @Override public void run(){if(!active)return;samplePlayback();main.postDelayed(this,1000);}
@@ -59,7 +60,9 @@ public final class LivePlayerActivity extends Activity {
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
 
     @Override public void onCreate(Bundle state){
-        super.onCreate(state);WindowCompat.setDecorFitsSystemWindows(getWindow(),false);
+        super.onCreate(state);
+        entryOrientation=state==null?getResources().getConfiguration().orientation:state.getInt("entryOrientation",getResources().getConfiguration().orientation);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(),false);
         tvRemote=getIntent().getBooleanExtra("tvRemote",false)||((android.app.UiModeManager)getSystemService(UI_MODE_SERVICE)).getCurrentModeType()==android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;
         setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         if(state!=null&&state.containsKey("windowBrightness")){WindowManager.LayoutParams attrs=getWindow().getAttributes();attrs.screenBrightness=state.getFloat("windowBrightness");getWindow().setAttributes(attrs);}
@@ -362,10 +365,10 @@ public final class LivePlayerActivity extends Activity {
         if(video!=null&&(video.isControllerFullyVisible()||!phonePortrait()&&chrome.getVisibility()==View.VISIBLE)){
             video.hideController();controlsShown=false;updateLiveVisibility();return;
         }
-        if(!tvRemote&&landscape()){setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);return;}
+        if(!tvRemote&&entryOrientation==Configuration.ORIENTATION_PORTRAIT&&landscape()&&getRequestedOrientation()!=ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED){setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);return;}
         super.onBackPressed();
     }
-    @Override protected void onSaveInstanceState(Bundle state){state.putString("pickerGroup",pickerGroup);state.putFloat("windowBrightness",getWindow().getAttributes().screenBrightness);state.putBoolean("resume",player==null?playAfterRecovery:player.getPlayWhenReady());try{state.putString("channelId",channel().getString("id"));state.putInt("line",lineIndex);}catch(Exception ignored){}super.onSaveInstanceState(state);}
+    @Override protected void onSaveInstanceState(Bundle state){state.putInt("entryOrientation",entryOrientation);state.putString("pickerGroup",pickerGroup);state.putFloat("windowBrightness",getWindow().getAttributes().screenBrightness);state.putBoolean("resume",player==null?playAfterRecovery:player.getPlayWhenReady());try{state.putString("channelId",channel().getString("id"));state.putInt("line",lineIndex);}catch(Exception ignored){}super.onSaveInstanceState(state);}
     @Override protected void onStop(){if(liveOptions!=null){liveOptions.dismiss();liveOptions=null;}active=false;++ticket;cancelRetry();main.removeCallbacks(watchdog);stage.release();if(pending!=null)pending.cancel(true);if(player!=null){playAfterRecovery=player.getPlayWhenReady();video.setPlayer(null);player.release();player=null;}super.onStop();}
     @Override protected void onDestroy(){worker.shutdownNow();main.removeCallbacksAndMessages(null);super.onDestroy();}
 }
