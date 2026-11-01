@@ -825,11 +825,12 @@ class PhoneActivity : Activity() {
         val desc=detailInfo.optString("desc")
         if(desc.isNotBlank()) info.addView(text(android.text.Html.fromHtml(desc).toString(),14f).apply {maxLines=4;setTextColor(secondaryColor)})
         val box = section("选择剧集 · 共 ${episodes.length()} 集",episodeParent)
+        box.addView(text(SegmentSkipStore.summary(this,title),13f).apply { setTextColor(accentColor) })
         val columns = if(resources.configuration.fontScale > 1.3f) 2 else if(twoTouchColumns) ((touchContentWidthDp*.58f-32)/90).toInt().coerceIn(3,6) else 3
         for(start in 0 until episodes.length() step columns) {
             val row = buttonRow(box)
             for(i in start until minOf(start + columns, episodes.length())) rowButton(row, "第 ${i+1} 集") {
-                AlertDialog.Builder(this).setTitle("第 ${i+1} 集").setItems(arrayOf("手机播放", "投屏到电视")) { _, which ->
+                AlertDialog.Builder(this).setCustomTitle(text("第 ${i+1} 集\n${SegmentSkipStore.summary(this,title)}",16f).apply { setPadding(dp(24),dp(18),dp(24),dp(8)) }).setItems(arrayOf("手机播放", "投屏到电视")) { _, which ->
                     if(which==0) playLocal(i)
                     else if(device == null) chooseDevice { cast(i) } else cast(i)
                 }.show()

@@ -53,6 +53,7 @@ public final class DirectPlayerActivity extends Activity {
     private Button previous, next, speed, subtitle;
     private Switch autoNext;
     private PlaybackStore history;
+    private SegmentSkipController segmentSkip;
     private SharedPreferences settings;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable checkpoint = new Runnable() {
@@ -96,6 +97,7 @@ public final class DirectPlayerActivity extends Activity {
     @Override protected void onStart() {
         super.onStart();
         boolean restoreControls=controlsVisible;
+        segmentSkip = new SegmentSkipController(this, title, this::holdControls, this::resumeControls, this::finishSkippedEpisode);
         landscape=getResources().getConfiguration().orientation==Configuration.ORIENTATION_LANDSCAPE;
         stage=new PlaybackGestureLayout(this);stage.setBackgroundColor(Color.BLACK);
         playerView=(PlayerView)LayoutInflater.from(this).inflate(R.layout.player_phone_view,stage,false);
@@ -151,6 +153,7 @@ public final class DirectPlayerActivity extends Activity {
             bottomChrome.addView(autoNext,new LinearLayout.LayoutParams(-1,dp(48)));
             setContentView(root);
         }
+        segmentSkip.addControls(bottomChrome, false);
         ViewCompat.setOnApplyWindowInsetsListener(landscape?stage:root,(v,insets)->{
             androidx.core.graphics.Insets bars=insets.getInsets(WindowInsetsCompat.Type.systemBars()|WindowInsetsCompat.Type.displayCutout());
             if(landscape){topChrome.setPadding(bars.left+dp(16),bars.top+dp(6),bars.right+dp(16),dp(12));bottomChrome.setPadding(bars.left+dp(20),dp(4),bars.right+dp(20),bars.bottom+dp(4));}
@@ -209,7 +212,13 @@ public final class DirectPlayerActivity extends Activity {
         updateHeading();
         MediaItem.Builder media = new MediaItem.Builder().setUri(url);
         if (url.toLowerCase(java.util.Locale.ROOT).contains(".m3u8")) media.setMimeType(MimeTypes.APPLICATION_M3U8);
+        segmentSkip.close();
         player.setMediaItem(media.build()); player.seekTo(position); player.prepare(); player.setPlayWhenReady(resume);
+        segmentSkip.bind(player);
+    }
+    private void finishSkippedEpisode() {
+        if (settings.getBoolean("autoNext", true) && index + 1 < urls.size()) switchEpisode(index + 1);
+        else { player.pause(); saveProgress(); status.setText("本集片尾已跳过"); playerView.showController(); }
     }
     private void switchEpisode(int target) {
         if (target < 0 || target >= urls.size() || player == null) return;
@@ -251,7 +260,9 @@ public final class DirectPlayerActivity extends Activity {
     }
     private void chooseEpisode(){
         holdControls();String[] labels=new String[urls.size()];for(int i=0;i<labels.length;i++)labels[i]="第 "+(i+1)+" 集";
-        dialog=new AlertDialog.Builder(this).setTitle("选集").setSingleChoiceItems(labels,index,(d,which)->{switchEpisode(which);d.dismiss();}).setNegativeButton("关闭",null).setOnDismissListener(d->resumeControls()).show();
+        TextView heading=label("选集\n"+SegmentSkipStore.summary(this,title),16);
+        heading.setPadding(dp(24),dp(18),dp(24),dp(8));
+        dialog=new AlertDialog.Builder(this).setCustomTitle(heading).setSingleChoiceItems(labels,index,(d,which)->{switchEpisode(which);d.dismiss();}).setNegativeButton("关闭",null).setOnDismissListener(d->resumeControls()).show();
     }
     private void refreshEpisodeGrid(){
         if(episodeGrid==null)return;episodeGrid.removeAllViews();int columns=getResources().getConfiguration().fontScale>1.3f?3:4;
@@ -280,7 +291,7 @@ public final class DirectPlayerActivity extends Activity {
         else super.onBackPressed();
     }
     private void saveProgress() {
-        if (player != null) history.save(source, item, title, index, player.getCurrentPosition(), player.getDuration());
+        if (player != null) history.save(source, item, title, index, segmentSkip != null && segmentSkip.isCompleted() ? player.getDuration() : player.getCurrentPosition(), player.getDuration());
     }
     @Override protected void onSaveInstanceState(Bundle state) {
         state.putFloat("windowBrightness",getWindow().getAttributes().screenBrightness);
@@ -292,6 +303,7 @@ public final class DirectPlayerActivity extends Activity {
     }
     @Override protected void onPause() { saveProgress(); super.onPause(); }
     @Override protected void onStop() {
+        if(segmentSkip!=null)segmentSkip.close();
         if(stage!=null)stage.release();
         main.removeCallbacks(checkpoint); if (dialog != null) dialog.dismiss(); if (subtitles != null) subtitles.close();
         if (player != null) { saveProgress(); position = player.getCurrentPosition(); resume = player.getPlayWhenReady(); player.release(); player = null; }

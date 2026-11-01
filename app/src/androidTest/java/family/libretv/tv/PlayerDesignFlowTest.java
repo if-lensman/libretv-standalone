@@ -25,7 +25,7 @@ public final class PlayerDesignFlowTest extends TestCase {
     private static final String ROOT="http://10.0.2.2:19001";
     @Override protected void setUp() throws Exception {
         instrument=InstrumentationRegistry.getInstrumentation();context=instrument.getTargetContext();
-        for(String name:new String[]{"live-library","standalone-library","standalone-player","standalone-playback","MainActivity","family.libretv.tv.MainActivity","recommendations","github-updates"}){
+        for(String name:new String[]{"live-library","standalone-library","standalone-player","standalone-playback","segment-skip","MainActivity","family.libretv.tv.MainActivity","recommendations","github-updates"}){
             SharedPreferences p=context.getSharedPreferences(name,0);backups.put(name,new HashMap<>(p.getAll()));p.edit().clear().commit();
         }
         context.getSharedPreferences("github-updates",0).edit().putLong("lastCheck",System.currentTimeMillis()).commit();
@@ -62,7 +62,9 @@ public final class PlayerDesignFlowTest extends TestCase {
     private void click(String text){for(View v:views())if(v instanceof TextView&&text.contentEquals(((TextView)v).getText())&&v.isShown()){instrument.runOnMainSync(v::performClick);instrument.waitForIdleSync();return;}fail("Missing "+text+": "+texts());}
     private void capture(String filename)throws Exception {
         instrument.waitForIdleSync();Thread.sleep(450);Bitmap b=instrument.getUiAutomation().takeScreenshot();assertNotNull(b);
-        try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(context.getFilesDir(),filename))){b.compress(Bitmap.CompressFormat.PNG,100,out);}b.recycle();
+        try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(context.getFilesDir(),filename))){b.compress(Bitmap.CompressFormat.PNG,100,out);}
+        try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(context.getExternalFilesDir(null),filename))){b.compress(Bitmap.CompressFormat.PNG,100,out);}
+        b.recycle();
     }
     private void rotate(int orientation)throws Exception {
         Activity old=activity;instrument.runOnMainSync(()->old.setRequestedOrientation(orientation));long deadline=SystemClock.uptimeMillis()+10000;
@@ -100,6 +102,86 @@ public final class PlayerDesignFlowTest extends TestCase {
         showPhone();click("字幕");disableSubtitles("subtitles");
         click("更多");chooseDialog("dialog",0);assertTrue("Restart did not seek to start",position()<1500);instrument.runOnMainSync(()->player().pause());
         click("更多");chooseDialog("dialog",1);assertTrue(context.getSharedPreferences("standalone-player",0).getBoolean("autoNext",false));
+    }
+    private void startSkipPhone(String sourceUrl) throws Exception {
+        ArrayList<String> urls=new ArrayList<>();for(int i=0;i<3;i++)urls.add(ROOT+"/demo.mp4");
+        JSONObject src=source().put("url",sourceUrl);
+        activity=instrument.startActivitySync(new Intent(context,DirectPlayerActivity.class).putStringArrayListExtra("episodes",urls).putExtra("title","片头片尾测试 第一季").putExtra("source",src.toString()).putExtra("item",item().toString()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));ready();
+    }
+    private void waitForText(String text) throws Exception {
+        long end=SystemClock.uptimeMillis()+10000;
+        while(SystemClock.uptimeMillis()<end){if(texts().contains(text))return;Thread.sleep(100);}fail("Missing text "+text+": "+texts());
+    }
+    private void awaitEpisode(String fieldName,int index) throws Exception {
+        long end=SystemClock.uptimeMillis()+12000;
+        while(SystemClock.uptimeMillis()<end){int[] current={-1};instrument.runOnMainSync(()->current[0]=(Integer)field(fieldName));if(current[0]==index){ready();return;}Thread.sleep(100);}fail("Episode did not advance");
+    }
+    private void awaitIntroSkipped() throws Exception {
+        long end=SystemClock.uptimeMillis()+5000;
+        while(SystemClock.uptimeMillis()<end){if(position()>=4900)return;Thread.sleep(50);}fail("Intro was not skipped: "+position());
+    }
+    private long duration() {long[] d={0};instrument.runOnMainSync(()->d[0]=player().getDuration());return d[0];}
+    private void testSkipMarksAndCancellation(boolean tv) throws Exception {
+        long duration=duration();assertTrue(duration>30000);
+        at(5000);instrument.runOnMainSync(()->{if(tv)invoke("showControls",new Class<?>[]{boolean.class},true);else ((PlayerView)field("playerView")).showController();});
+        click("设置片头");at(duration-12000);click("设置片尾");
+        assertTrue(context.getSharedPreferences("segment-skip",0).getBoolean("片头片尾测试第一季:enabled",false));
+        assertEquals(12000,context.getSharedPreferences("segment-skip",0).getLong("片头片尾测试第一季:outro",0));
+        capture(tv?"skip-tv-controls.png":"skip-phone-portrait.png");
+        instrument.runOnMainSync(()->{if(tv){((CheckBox)field("autoNext")).setChecked(true);invoke("switchTvEpisode",new Class<?>[]{int.class},1);}else{context.getSharedPreferences("standalone-player",0).edit().putBoolean("autoNext",true).commit();invoke("switchEpisode",new Class<?>[]{int.class},1);}});
+        awaitEpisode(tv?"episodeIndex":"index",1);awaitIntroSkipped();
+        at(500);Thread.sleep(600);awaitPosition(500);
+        at(duration-13000);instrument.runOnMainSync(()->player().play());waitForText("取消跳过");
+        capture(tv?"skip-tv-countdown.png":"skip-phone-countdown.png");click("取消跳过");Thread.sleep(5500);
+        instrument.runOnMainSync(()->assertEquals(1,field(tv?"episodeIndex":"index")));
+        at(duration-13000);instrument.runOnMainSync(()->player().play());waitForText("取消跳过");
+        awaitEpisode(tv?"episodeIndex":"index",2);awaitIntroSkipped();
+        // Last episode completes without wrapping around or replaying the credits on resume.
+        at(duration-13000);instrument.runOnMainSync(()->player().play());waitForText("取消跳过");Thread.sleep(5500);
+        instrument.runOnMainSync(()->{assertEquals(2,field(tv?"episodeIndex":"index"));assertFalse(player().getPlayWhenReady());});
+        JSONObject saved=new PlaybackStore(context).find(source(),item());
+        assertNotNull(saved);assertEquals(duration,saved.optLong("position"));
+    }
+    public void testPhoneSkipMarksCrossSourceAndManualReview() throws Exception {
+        startSkipPhone(ROOT+"/cms");testSkipMarksAndCancellation(false);
+        // A different source with the same show name reuse this show's marks.
+        instrument.runOnMainSync(activity::finish);instrument.waitForIdleSync();
+        startSkipPhone(ROOT+"/different-source");Thread.sleep(700);assertTrue(position()>=5000);
+        at(20000);rotate(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);showPhone();
+        capture("skip-phone-landscape.png");assertTrue(texts().contains("设置片头"));assertTrue(texts().contains("设置片尾"));
+        click("自动跳过 · 开");assertFalse(context.getSharedPreferences("segment-skip",0).getBoolean("片头片尾测试第一季:enabled",true));
+    }
+    public void testTvSkipMarksAndManualReview() throws Exception {
+        instrument.setInTouchMode(false);
+        activity=instrument.startActivitySync(new Intent(context,MainActivity.class).putExtra("tvDestination","search").addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        JSONObject src=source(),it=item();JSONArray eps=new JSONArray();for(int i=0;i<3;i++)eps.put(ROOT+"/demo.mp4");
+        instrument.runOnMainSync(()->{set("title","片头片尾测试 第一季");set("detailSource",src);set("selected",it);set("episodes",eps);set("episodeIndex",0);try{set("playbackUri",new java.net.URI(ROOT+"/demo.mp4"));}catch(Exception e){throw new RuntimeException(e);}set("position",0L);set("playWhenReady",true);invoke("showPlayer",new Class<?>[]{});});ready();
+        testSkipMarksAndCancellation(true);
+    }
+    public void testSeriesMarksVisibleInDetailsAndEpisodePicker() throws Exception {
+        startSkipPhone(ROOT+"/cms");at(5000);showPhone();click("设置片头");
+        instrument.runOnMainSync(()->invoke("chooseEpisode",new Class<?>[]{}));
+        Thread.sleep(300);
+        assertFalse(instrument.getUiAutomation().getRootInActiveWindow().findAccessibilityNodeInfosByText("片头 00:05").isEmpty());
+        capture("skip-phone-episode-picker.png");instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        instrument.runOnMainSync(activity::finish);instrument.waitForIdleSync();
+        JSONObject src=source(),it=item();JSONArray eps=new JSONArray().put(ROOT+"/demo.mp4").put(ROOT+"/demo.mp4");
+        new LocalRepository(context).favorites("/api/favorites",new JSONObject().put("source",src).put("item",it),"POST");
+        String favoriteId=LocalRepository.key(src.getString("url")+":"+it.getString("vodId"));
+        new LocalRepository(context).favorites("/api/favorites/"+favoriteId,null,"DELETE");
+        assertEquals(5000,new SegmentSkipStore(context,"片头片尾测试 第一季").intro());
+        activity=instrument.startActivitySync(new Intent(context,PhoneActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));instrument.waitForIdleSync();
+        instrument.runOnMainSync(()->{set("title","片头片尾测试 第一季");set("source",src);set("selected",it);set("episodes",eps);set("detailInfo",new JSONObject());invoke("details",new Class<?>[]{});});
+        assertTrue(texts().contains("片头 00:05 · 片尾 未设置 · 自动跳过开"));capture("skip-phone-detail.png");
+        click("第 2 集");Thread.sleep(300);
+        assertFalse(instrument.getUiAutomation().getRootInActiveWindow().findAccessibilityNodeInfosByText("片头 00:05").isEmpty());
+        instrument.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        new SegmentSkipStore(context,"片头片尾测试 第一季").setEnabled(false);
+        instrument.runOnMainSync(()->invoke("details",new Class<?>[]{}));assertTrue(texts().contains("片头 00:05 · 片尾 未设置 · 自动跳过关"));
+        instrument.runOnMainSync(activity::finish);instrument.waitForIdleSync();
+        activity=instrument.startActivitySync(new Intent(context,MainActivity.class).putExtra("tvDestination","search").addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        instrument.runOnMainSync(()->{set("title","片头片尾测试 第一季");set("detailSource",src);set("selected",it);set("episodes",eps);set("detailInfo",new JSONObject());invoke("showDetail",new Class<?>[]{});});
+        assertTrue(texts().contains("片头 00:05 · 片尾 未设置 · 自动跳过关"));capture("skip-tv-detail.png");
     }
     private Activity resumed(Class<?> type,Activity excluded)throws Exception {
         long until=SystemClock.uptimeMillis()+10000;

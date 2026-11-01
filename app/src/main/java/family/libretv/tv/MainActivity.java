@@ -76,6 +76,7 @@ public final class MainActivity extends Activity {
     private long lastTvSeekEvent;
     private final Runnable clearSeekPreview=()->{if(seekPreview!=null)seekPreview.setVisibility(View.GONE);};
     private SubtitleMenu subtitleMenu;
+    private SegmentSkipController segmentSkip;
     private android.app.AlertDialog playerOptions;
     private JSONObject detailSource;
     private String detailFavoriteId="";
@@ -84,7 +85,7 @@ public final class MainActivity extends Activity {
     private ProgressBar playbackProgress;
     private boolean controlsVisible, playerHasFrame;
     private final Runnable hidePlayerControls = () -> {
-        if (screen == Screen.PLAYER && player != null && player.isPlaying() && (subtitleMenu == null || !subtitleMenu.isShowing()) && (playerOptions == null || !playerOptions.isShowing())) hideControls();
+        if (screen == Screen.PLAYER && player != null && player.isPlaying() && (subtitleMenu == null || !subtitleMenu.isShowing()) && (playerOptions == null || !playerOptions.isShowing()) && (segmentSkip == null || !segmentSkip.isCountingDown())) hideControls();
     };
     private long position;
     private boolean playWhenReady = true;
@@ -682,6 +683,8 @@ public final class MainActivity extends Activity {
         boolean listed=store.contains(detailSource,selected);
         button(actions,listed?"移出片单":"加入片单",()->task("正在保存片单",()->{if(listed)store.remove(PlaybackStore.identity(detailSource,selected));else store.add(detailSource,selected,title);return true;},ok->showDetail()));
         content.addView(label("选择剧集", 21));
+        TextView skipInfo = label(SegmentSkipStore.summary(this, title), 16);
+        skipInfo.setTextColor(PiankeUi.PINK); content.addView(skipInfo);
         int columns = getResources().getConfiguration().screenWidthDp >= 900 ? 8 : 6;
         GridLayout grid = new GridLayout(this); grid.setColumnCount(columns); content.addView(grid);
         ArrayList<Button> buttons = new ArrayList<>();
@@ -828,6 +831,8 @@ public final class MainActivity extends Activity {
         autoNext=new CheckBox(this);autoNext.setText("自动下一集");autoNext.setTextColor(Color.WHITE);
         autoNext.setChecked(getPreferences(MODE_PRIVATE).getBoolean("autoNext",true));
         autoNext.setOnCheckedChangeListener((v,on)->getPreferences(MODE_PRIVATE).edit().putBoolean("autoNext",on).apply());
+        segmentSkip = new SegmentSkipController(this, title, () -> {showControls(false); main.removeCallbacks(hidePlayerControls);}, () -> showControls(false), this::finishSkippedTvEpisode);
+        segmentSkip.addControls(playerControls, true);
         TextView hint=label("收起时：左右快退 / 快进，长按加速 · 上下唤出 · 返回收起",13);hint.setTextColor(PlayerStyle.MUTED);hint.setGravity(Gravity.CENTER);hint.setPadding(0,dp(8),0,0);playerControls.addView(hint);
         stage.addView(playerControls, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
         seekPreview=label("",20);seekPreview.setGravity(Gravity.CENTER);seekPreview.setPadding(dp(24),dp(12),dp(24),dp(12));
@@ -943,6 +948,7 @@ public final class MainActivity extends Activity {
         });
         player.setPlaybackSpeed(tvPlaybackSpeed());
         player.setMediaItem(item.build(), position); player.prepare(); player.setPlayWhenReady(playWhenReady);
+        segmentSkip.bind(player);
         playerView.setKeepScreenOn(true); main.post(ticker);
     }
     private void togglePlay() { if (player != null) { if (player.getPlayWhenReady()) player.pause(); else player.play(); } }
@@ -951,14 +957,19 @@ public final class MainActivity extends Activity {
         long end = player.getDuration(); long next = Math.max(0, player.getCurrentPosition() + delta);
         player.seekTo(end > 0 ? Math.min(end, next) : next);
     }
+    private void finishSkippedTvEpisode() {
+        if (autoNext.isChecked() && episodeIndex + 1 < episodes.length()) switchTvEpisode(episodeIndex + 1);
+        else {player.pause(); saveTvProgress(); setNotice("本集片尾已跳过，可选集继续观看。"); showControls(true);}
+    }
     private void switchTvEpisode(int target) {
         if(target<0 || target>=episodes.length() || busy)return;
         releasePlayer();preparePlayback(target,false);
     }
     private void saveTvProgress() {
-        if(player!=null)new PlaybackStore(this).save(detailSource,selected,title,episodeIndex,player.getCurrentPosition(),player.getDuration());
+        if(player!=null)new PlaybackStore(this).save(detailSource,selected,title,episodeIndex,segmentSkip != null && segmentSkip.isCompleted() ? player.getDuration() : player.getCurrentPosition(),player.getDuration());
     }
     private void releasePlayer() {
+        if(segmentSkip!=null)segmentSkip.close();
         tvSeekKey=KeyEvent.KEYCODE_UNKNOWN;main.removeCallbacks(clearSeekPreview);if(seekPreview!=null)seekPreview.setVisibility(View.GONE);
         if(playerOptions!=null){playerOptions.dismiss();playerOptions=null;}
         if(subtitleMenu!=null) { subtitleMenu.close();subtitleMenu=null; }
