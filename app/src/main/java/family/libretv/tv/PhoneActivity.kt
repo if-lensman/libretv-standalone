@@ -297,6 +297,7 @@ class PhoneActivity : Activity() {
         withContext(Dispatchers.IO) { client.request(path, body, method) }
 
     private fun login(manualMessage: String? = null) {
+        sources = client.local.sources()
         screen("config", "视频来源配置")
         content.addView(text("添加自己的电影、电视剧来源。直播频道请在直播订阅中添加。",14f).apply {setTextColor(secondaryColor)})
         val shortcuts=buttonRow(content)
@@ -315,7 +316,7 @@ class PhoneActivity : Activity() {
             work("正在导入…") {
                 val value = config.text.toString()
                 val count = withContext(Dispatchers.IO) { client.local.importSources(value) }
-                sources = client.local.sources(); login(); notice.text = "已新增 $count 个源"
+                sources = client.local.sources(); login(); notice.text = "配置已导入，新增 $count 个源"
             }
         }
         button("从文件导入", box) {
@@ -348,6 +349,32 @@ class PhoneActivity : Activity() {
             }, 411)
         }
         setting(content,"订阅与分享","粘贴配置、二维码与导出") {box.visibility=if(box.visibility==View.VISIBLE)View.GONE else View.VISIBLE}
+        val subscriptions = SourceSubscriptions(client.local)
+        val updates = section("影视订阅更新")
+        updates.addView(text("打开 App 时按频率检查订阅，关闭后不运行定时任务。单个 CMS 接口实时查询影片，文件或 JSON 文本需重新导入。",13f).apply {setTextColor(secondaryColor)})
+        setting(updates,"自动更新频率",SourceSubscriptions.FREQUENCIES[subscriptions.frequency()]) {
+            dialog=AlertDialog.Builder(this).setTitle("影视订阅更新频率")
+                .setSingleChoiceItems(SourceSubscriptions.FREQUENCIES,subscriptions.frequency()) { d,which -> subscriptions.setFrequency(which);d.dismiss();login() }
+                .setNegativeButton("取消",null).show()
+        }
+        button("立即更新影视订阅",updates) {
+            work("正在更新影视订阅…") {
+                val result=withContext(Dispatchers.IO) { subscriptions.refresh(true) }
+                sources=client.local.sources();login();notice.text=result.message()
+            }
+        }
+        val entries=subscriptions.entries()
+        if(entries.length()==0) updates.addView(text("尚未保存影视清单订阅。单个影视接口无需订阅清单，搜索和选集时直接读取服务端。",13f))
+        for(i in 0 until entries.length()) {
+            val entry=entries.getJSONObject(i)
+            setting(updates,"影视订阅 ${i+1}",SourceSubscriptions.status(entry)) {
+                dialog=AlertDialog.Builder(this).setTitle("影视订阅 ${i+1}").setMessage(SourceSubscriptions.status(entry))
+                    .setPositiveButton("关闭",null).setNeutralButton("取消订阅") { _,_->
+                        dialog=AlertDialog.Builder(this).setMessage("停止更新这个订阅？已保存的来源会保留。")
+                            .setNegativeButton("返回",null).setPositiveButton("停止更新") { _,_->subscriptions.remove(entry.getString("url"));login() }.show()
+                    }.show()
+            }
+        }
         val saved = section("已保存 · ${sources.length()} 个源")
         for(i in 0 until sources.length()) {
             val item=sources.getJSONObject(i);val row=buttonRow(saved).apply {gravity=Gravity.CENTER_VERTICAL}
@@ -601,11 +628,15 @@ class PhoneActivity : Activity() {
         val row=buttonRow(imports)
         rowButton(row,"扫码添加") {startActivityForResult(android.content.Intent(this,SourceScannerActivity::class.java),413)}
         rowButton(row,"导入 M3U 文件") {startActivityForResult(android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(android.content.Intent.CATEGORY_OPENABLE),414)}
-        val automatic=Switch(this).apply {text="自动更新频道";setTextColor(Color.WHITE);isChecked=liveRepository.automatic();imports.addView(this)}
-        automatic.setOnCheckedChangeListener { _,checked->liveRepository.setAutomatic(checked) }
-        val interval=if(liveRepository.interval()>=24*60*60*1000L) "每天" else "每6小时"
-        setting(imports,"检查频率",interval) {
-            dialog=AlertDialog.Builder(this).setTitle("进入直播时检查更新").setSingleChoiceItems(arrayOf("每6小时","每天"),if(liveRepository.interval()>=24*60*60*1000L)1 else 0) { d,which ->liveRepository.setInterval((if(which==0)6L else 24L)*60*60*1000);d.dismiss();liveSourcesScreen()}.setNegativeButton("取消",null).show()
+        setting(imports,"自动更新频率",LiveRepository.FREQUENCIES[liveRepository.frequency()]) {
+            dialog=AlertDialog.Builder(this).setTitle("直播订阅更新频率").setSingleChoiceItems(LiveRepository.FREQUENCIES,liveRepository.frequency()) { d,which ->liveRepository.setFrequency(which);d.dismiss();liveSourcesScreen()}.setNegativeButton("取消",null).show()
+        }
+        imports.addView(text("打开 App 或进入直播时按频率检查，关闭后不运行定时任务；本地文件需重新导入。",13f).apply {setTextColor(secondaryColor)})
+        button("立即更新直播订阅",imports) {
+            work("正在更新直播订阅…") {
+                val result=withContext(Dispatchers.IO) {liveRepository.refresh(true)}
+                liveSourcesScreen();notice.text=if(result.failed>0) "部分订阅更新失败，已保留原频道" else if(result.updated>0) "直播订阅已更新" else "没有可更新的直播订阅"
+            }
         }
         val all=liveRepository.subscriptions()
         if(all.length()==0) content.addView(text("还没有直播订阅，添加后即可获取频道。",14f))
@@ -619,8 +650,7 @@ class PhoneActivity : Activity() {
                     .setNegativeButton("取消",null).setPositiveButton("删除") {_,_->liveRepository.remove(entry.getString("id"));liveSourcesScreen()}.show()})
                 libraryMenu(entry.optString("name"),actions)
             }.apply {contentDescription="订阅管理 · "+entry.optString("name");layoutParams=LinearLayout.LayoutParams(dp(48),dp(48))}
-            val updated=liveRepository.prefs.getLong("updated-"+entry.getString("id"),0)
-            box.addView(text(if(entry.optString("url").isEmpty()) "本地文件 · 重新导入同名文件可更新" else if(updated>0) "上次更新 · "+android.text.format.DateFormat.format("MM-dd HH:mm",updated) else "首次进入直播时更新",13f).apply {setTextColor(secondaryColor)})
+            box.addView(text(liveRepository.status(entry),13f).apply {setTextColor(secondaryColor)})
         }
         button("查看直播频道") {liveScreen()}
     }
@@ -708,6 +738,7 @@ class PhoneActivity : Activity() {
     private fun startSearch() {
         searchJob?.cancel(); val token = ++searchToken
         val keyword = query
+        sources = client.local.sources()
         val selectedSources = JSONArray(sources.toString())
         results = JSONArray(); shownResults = 30; searchCompleted = 0; searchFailed = 0
         searchTotal = (0 until selectedSources.length()).count { selectedSources.getJSONObject(it).optBoolean("enabled", true) }

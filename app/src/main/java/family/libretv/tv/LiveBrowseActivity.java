@@ -37,8 +37,12 @@ public final class LiveBrowseActivity extends Activity {
     private TextView text(String value,int size,int color){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);return t;}
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        try{repository=new LiveRepository(this);if(state!=null){group=state.getString("group","全部");focusKey=state.getString("focusKey","");}else if(!repository.lastChannel().isEmpty())focusKey="channel:"+repository.lastChannel();render();if(getIntent().getBooleanExtra("openSources",false))subscriptions();else refresh(false);}
+        try{repository=new LiveRepository(this);if(state!=null){group=state.getString("group","全部");focusKey=state.getString("focusKey","");}else if(!repository.lastChannel().isEmpty())focusKey="channel:"+repository.lastChannel();render();if(getIntent().getBooleanExtra("openSources",false))subscriptions();}
         catch(Exception e){TextView message=text("频道资料无法读取，请返回后重试",20,0xffffffff);setContentView(message);}
+    }
+    @Override protected void onStart(){
+        super.onStart();
+        if(repository!=null&&!getIntent().getBooleanExtra("openSources",false))refresh(false);
     }
     private Button button(LinearLayout parent,String label,String key,boolean selected,Runnable action){
         Button b=new Button(this);b.setText(label);b.setTextSize(14);b.setTextColor(selected?0xfff6c1db:0xffd7e0eb);b.setBackground(focusBackground(selected));b.setAllCaps(false);b.setFocusableInTouchMode(true);b.setMinWidth(0);b.setMinimumWidth(0);b.setPadding(dp(12),0,dp(12),0);b.setId(View.generateViewId());
@@ -132,11 +136,12 @@ public final class LiveBrowseActivity extends Activity {
         }catch(Exception e){main.post(()->{if(!dead)notice.setText("导入失败，已有频道保留 · "+(e.getMessage()==null?"请检查文件或重新选择":e.getMessage()));});}});
     }
     private void subscriptions(){
-        final JSONArray entries;try{entries=repository.subscriptions();}catch(Exception e){notice.setText("订阅无法读取，请重试");return;}String[] labels=new String[entries.length()+2];labels[0]="添加直播订阅";labels[1]="导入 M3U 文件";
-        for(int i=0;i<entries.length();i++){JSONObject entry=entries.optJSONObject(i);labels[i+2]=entry.optString("name")+(entry.optBoolean("enabled",true)?" · 已启用":" · 已停用");}
+        final JSONArray entries;try{entries=repository.subscriptions();}catch(Exception e){notice.setText("订阅无法读取，请重试");return;}String[] labels=new String[entries.length()+4];labels[0]="添加直播订阅";labels[1]="导入 M3U 文件";labels[2]="自动更新频率 · "+LiveRepository.FREQUENCIES[repository.frequency()];labels[3]="立即更新直播订阅";
+        for(int i=0;i<entries.length();i++){JSONObject entry=entries.optJSONObject(i);labels[i+4]=entry.optString("name")+(entry.optBoolean("enabled",true)?" · 已启用":" · 已停用");}
         new AlertDialog.Builder(this).setTitle("直播订阅").setItems(labels,(d,w)->{
-            if(w==0)configure();else if(w==1)pickPlaylist();else {JSONObject entry=entries.optJSONObject(w-2);String id=entry.optString("id");
-                new AlertDialog.Builder(this).setTitle(entry.optString("name")).setItems(new String[]{entry.optBoolean("enabled",true)?"停用订阅":"启用订阅","删除订阅"},(dialog,which)->{
+            if(w==0)configure();else if(w==1)pickPlaylist();else if(w==2)new AlertDialog.Builder(this).setTitle("直播订阅更新频率").setSingleChoiceItems(LiveRepository.FREQUENCIES,repository.frequency(),(dialog,index)->{repository.setFrequency(index);dialog.dismiss();subscriptions();}).setNegativeButton("取消",null).show();
+            else if(w==3)refresh(true);else {JSONObject entry=entries.optJSONObject(w-4);String id=entry.optString("id");
+                new AlertDialog.Builder(this).setTitle(entry.optString("name")+" · "+repository.status(entry)).setItems(new String[]{entry.optBoolean("enabled",true)?"停用订阅":"启用订阅","删除订阅"},(dialog,which)->{
                     if(which==0){try{repository.enable(id,!entry.optBoolean("enabled",true));subscriptions();}catch(Exception e){notice.setText(e.getMessage());}}
                     else new AlertDialog.Builder(this).setMessage("删除这个直播订阅？频道与该订阅的收藏将一并移除。") .setNegativeButton("取消",null).setPositiveButton("删除",(confirm,index)->{try{repository.remove(id);renderSafely();subscriptions();}catch(Exception e){notice.setText(e.getMessage());}}).show();
                 }).setNegativeButton("返回",(dialog,which)->subscriptions()).show();

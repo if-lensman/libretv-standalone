@@ -427,8 +427,16 @@ public final class MainActivity extends Activity {
     }
     private void saveSourceSelection() {
         try {
-            for(int i=0;i<sources.length();i++) sources.getJSONObject(i).put("enabled",enabledSources.contains(sources.getJSONObject(i).getString("key")));
-            client.local.saveSources(sources);
+            synchronized(LocalRepository.DEFAULTS_LOCK) {
+                JSONArray latest=client.local.sources();
+                Set<String> shown=new HashSet<>();
+                for(int i=0;i<sources.length();i++)shown.add(sources.getJSONObject(i).getString("key"));
+                for(int i=0;i<latest.length();i++) {
+                    JSONObject item=latest.getJSONObject(i);
+                    if(shown.contains(item.getString("key")))item.put("enabled",enabledSources.contains(item.getString("key")));
+                }
+                client.local.saveSources(latest);sources=latest;loadSourceSelection();
+            }
         } catch(Exception e) { error(e); }
     }
     private int settingsSection;
@@ -454,7 +462,22 @@ public final class MainActivity extends Activity {
         if(selectedSection[0]!=null)selectedSection[0].requestFocus();
     }
     private void showVideoSources(){
+        try { sources=client.local.sources();loadSourceSelection(); } catch(Exception e){error(e);return;}
         page(Screen.SETTINGS,"视频来源");button(content,"‹ 返回设置",this::showSettings);button(content,"添加来源 / 扫码导入",this::showConfig);
+        SourceSubscriptions subscriptions=new SourceSubscriptions(client.local);
+        button(content,"自动更新频率 · "+SourceSubscriptions.FREQUENCIES[subscriptions.frequency()],()->new android.app.AlertDialog.Builder(this)
+            .setTitle("影视订阅更新频率").setSingleChoiceItems(SourceSubscriptions.FREQUENCIES,subscriptions.frequency(),(d,w)->{subscriptions.setFrequency(w);d.dismiss();showVideoSources();}).setNegativeButton("取消",null).show());
+        button(content,"立即更新影视订阅",()->task("正在更新影视订阅…",()->subscriptions.refresh(true),result->{sources=client.local.sources();loadSourceSelection();showVideoSources();setNotice(result.message());}));
+        content.addView(label("打开 App 时按频率检查订阅，关闭后不运行定时任务。文件/JSON文本需重新导入。",15));
+        try {
+            JSONArray entries=subscriptions.entries();
+            for(int i=0;i<entries.length();i++){
+                JSONObject entry=entries.getJSONObject(i);String title="影视订阅 "+(i+1);
+                button(content,title+" · "+SourceSubscriptions.status(entry),()->new android.app.AlertDialog.Builder(this).setTitle(title).setMessage(SourceSubscriptions.status(entry))
+                    .setPositiveButton("关闭",null).setNeutralButton("取消订阅",(d,w)->new android.app.AlertDialog.Builder(this).setMessage("停止更新这个订阅？已保存的来源会保留。")
+                        .setNegativeButton("返回",null).setPositiveButton("停止更新",(confirm,index)->{try{subscriptions.remove(entry.getString("url"));showVideoSources();}catch(Exception e){error(e);}}).show()).show());
+            }
+        }catch(Exception e){error(e);}
         if(sources.length()==0)content.addView(label("还没有视频来源。添加后即可搜索影片。",18));
         for(int i=0;i<sources.length();i++){
             JSONObject source=sources.optJSONObject(i);String key=source.optString("key");
@@ -605,6 +628,7 @@ public final class MainActivity extends Activity {
         String keyword=keywords.getText().toString().trim();
         if(keyword.isEmpty() || keyword.length()>100) {setNotice("请输入 1–100 字的片名");return;}
         try {
+            sources=client.local.sources();loadSourceSelection();
             JSONArray chosen=new JSONArray();
             for(int i=0;i<sources.length();i++) if(enabledSources.contains(sources.getJSONObject(i).getString("key"))) chosen.put(new JSONObject(sources.getJSONObject(i).toString()));
             if(chosen.length()==0){setNotice("请在设置中启用至少一个来源");return;}

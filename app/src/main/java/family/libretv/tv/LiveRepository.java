@@ -9,6 +9,9 @@ import org.json.*;
 /** Live subscriptions/cache only. Never writes VOD sources, favorites or playback progress. */
 final class LiveRepository {
     private static final Object LOCK=new Object();
+    static final String[] FREQUENCIES={"每次打开 App","每6小时","每天","每周","仅手动"};
+    private static final Set<String> CHECKED_THIS_OPEN=new HashSet<>(),IN_FLIGHT=new HashSet<>();
+    static void beginOpen(){synchronized(LOCK){CHECKED_THIS_OPEN.clear();}}
     final SharedPreferences prefs;
     LiveRepository(Context context) throws Exception {
         prefs=context.getApplicationContext().getSharedPreferences("live-library",0);
@@ -48,20 +51,39 @@ final class LiveRepository {
     void remove(String id)throws Exception{synchronized(LOCK){JSONArray next=new JSONArray(),all=subscriptions();for(int i=0;i<all.length();i++)if(!id.equals(all.getJSONObject(i).getString("id")))next.put(all.getJSONObject(i));prefs.edit().putString("subscriptions",next.toString()).remove("cache-"+id).remove("updated-"+id).remove("url-"+id).remove("attempt-"+id).remove("error-"+id).commit();}}
     void enable(String id,boolean enabled)throws Exception{synchronized(LOCK){JSONArray all=subscriptions();for(int i=0;i<all.length();i++)if(id.equals(all.getJSONObject(i).getString("id")))all.getJSONObject(i).put("enabled",enabled);prefs.edit().putString("subscriptions",all.toString()).commit();}}
     boolean automatic(){return prefs.getBoolean("automatic",true);}
-    long interval(){return prefs.getLong("interval",6*60*60*1000L);}
+    long interval(){return prefs.getLong("interval",0);}
     void setAutomatic(boolean enabled){prefs.edit().putBoolean("automatic",enabled).apply();}
     void setInterval(long ms){prefs.edit().putLong("interval",ms).apply();}
-    boolean due(JSONObject s,long now){String id=s.optString("id");return automatic()&&s.optBoolean("enabled",true)&&!s.optString("url").isEmpty()&&now-prefs.getLong("attempt-"+id,0)>60000&&(now-prefs.getLong("updated-"+id,0)>=interval()||!s.optString("url").equals(prefs.getString("url-"+id,"")));}
+    int frequency(){return !automatic()?4:interval()==0?0:interval()>=7*24*60*60*1000L?3:interval()>=24*60*60*1000L?2:1;}
+    void setFrequency(int value){prefs.edit().putBoolean("automatic",value!=4).putLong("interval",value==0?0:(value==3?7*24L:value==2?24L:6L)*60*60*1000).apply();}
+    boolean due(JSONObject s,long now){
+        String id=s.optString("id");long updated=prefs.getLong("updated-"+id,0),attempt=prefs.getLong("attempt-"+id,0);
+        if(!automatic()||!s.optBoolean("enabled",true)||s.optString("url").isEmpty())return false;
+        if((attempt>updated||!prefs.getString("error-"+id,"").isEmpty())&&now>=attempt&&now-attempt<60000)return false;
+        if(interval()==0){synchronized(LOCK){return !CHECKED_THIS_OPEN.contains(id);}}
+        return updated==0||now<updated||now-updated>=interval()||!s.optString("url").equals(prefs.getString("url-"+id,""));
+    }
+    String status(JSONObject entry){
+        if(entry.optString("url").isEmpty())return "本地文件 · 重新导入同名文件可更新";
+        String id=entry.optString("id");long updated=prefs.getLong("updated-"+id,0);
+        return (updated==0?"尚未更新":"上次成功："+new java.text.SimpleDateFormat("MM-dd HH:mm",Locale.getDefault()).format(new Date(updated)))
+            +(prefs.getString("error-"+id,"").isEmpty()?"":" · 更新失败，已保留原频道");
+    }
     static final class Refresh {int updated,failed;String error="";}
     Refresh refresh(boolean force)throws Exception {
         Refresh result=new Refresh();JSONArray all=subscriptions();
         for(int i=0;i<all.length();i++) {
             if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("更新已取消");
             JSONObject s=all.getJSONObject(i);String id=s.getString("id"),url=s.optString("url");
-            if(!s.optBoolean("enabled",true)||url.isEmpty()||(!force&&!due(s,System.currentTimeMillis())))continue;
-            prefs.edit().putLong("attempt-"+id,System.currentTimeMillis()).commit();
+            synchronized(LOCK){
+                while(IN_FLIGHT.contains(id))LOCK.wait();
+                JSONObject current=findByUrl(subscriptions(),url);
+                if(current==null||!id.equals(current.optString("id"))||!current.optBoolean("enabled",true)||url.isEmpty()||(!force&&!due(current,System.currentTimeMillis())))continue;
+                IN_FLIGHT.add(id);CHECKED_THIS_OPEN.add(id);
+            }
             try {
-                HttpURLConnection conn=LocalRepository.open(LocalRepository.validate(url));String text;
+                prefs.edit().putLong("attempt-"+id,System.currentTimeMillis()).commit();
+                HttpURLConnection conn=LocalRepository.openSubscription(url);String text;
                 try{if(conn.getResponseCode()!=200)throw new IOException("频道订阅暂时无法访问");text=LocalRepository.read(conn.getInputStream(),M3uPlaylist.MAX_BYTES);}finally{conn.disconnect();}
                 JSONArray channels=encode(id,M3uPlaylist.parse(text));
                 synchronized(LOCK){
@@ -71,6 +93,7 @@ final class LiveRepository {
                 }
                 result.updated++;
             }catch(Exception e){result.failed++;result.error=e.getMessage()==null?"频道更新失败":e.getMessage();prefs.edit().putString("error-"+id,result.error).apply();}
+            finally{synchronized(LOCK){IN_FLIGHT.remove(id);LOCK.notifyAll();}}
         }
         return result;
     }

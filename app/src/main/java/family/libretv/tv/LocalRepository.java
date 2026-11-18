@@ -12,9 +12,9 @@ import java.util.concurrent.*;
 
 /** On-device CMS requests and storage. No NAS service or login is involved. */
 final class LocalRepository {
-    private final SharedPreferences prefs;
+    final SharedPreferences prefs;
     static final String UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36";
-    private static final Object DEFAULTS_LOCK = new Object();
+    static final Object DEFAULTS_LOCK = new Object();
     LocalRepository(Context context) throws Exception {
         prefs = context.getApplicationContext().getSharedPreferences("standalone-library", 0);
         try (InputStream in = context.getAssets().open("default-sources.json")) {
@@ -44,36 +44,45 @@ final class LocalRepository {
                 throw new IOException("默认来源保存失败，请重新打开应用重试");
         }
     }
-    synchronized JSONArray sources() throws Exception { return new JSONArray(prefs.getString("sources", "[]")); }
-    synchronized void saveSources(JSONArray sources) throws Exception {
-        if (!prefs.edit().putString("sources", sources.toString()).commit()) throw new IOException("配置保存失败");
+    JSONArray sources() throws Exception { return new JSONArray(prefs.getString("sources", "[]")); }
+    void saveSources(JSONArray sources) throws Exception {
+        synchronized (DEFAULTS_LOCK) {
+            if (!prefs.edit().putString("sources", sources.toString()).commit()) throw new IOException("配置保存失败");
+        }
     }
-    synchronized void removeSource(String key) throws Exception {
-        JSONArray next = new JSONArray(), all = sources();
-        for(int i=0;i<all.length();i++) if(!all.getJSONObject(i).optString("key").equals(key)) next.put(all.getJSONObject(i));
-        saveSources(next);
+    void removeSource(String key) throws Exception {
+        synchronized (DEFAULTS_LOCK) {
+            JSONArray next = new JSONArray(), all = sources();
+            for(int i=0;i<all.length();i++) if(!all.getJSONObject(i).optString("key").equals(key)) next.put(all.getJSONObject(i));
+            saveSources(next);
+        }
     }
-    synchronized void setSourceEnabled(String key, boolean enabled) throws Exception {
-        JSONArray all = sources();
-        for (int i = 0; i < all.length(); i++)
-            if (all.getJSONObject(i).getString("key").equals(key)) all.getJSONObject(i).put("enabled", enabled);
-        saveSources(all);
+    void setSourceEnabled(String key, boolean enabled) throws Exception {
+        synchronized (DEFAULTS_LOCK) {
+            JSONArray all = sources();
+            for (int i = 0; i < all.length(); i++)
+                if (all.getJSONObject(i).getString("key").equals(key)) all.getJSONObject(i).put("enabled", enabled);
+            saveSources(all);
+        }
     }
-    synchronized String exportSources() throws Exception {
+    String exportSources() throws Exception {
         return new JSONObject().put("name", "LibreTV 本机来源").put("sources", sources()).toString(2);
     }
-    synchronized int importSources(String input) throws Exception {
+    int importSources(String input) throws Exception {
         String text = input.trim();
-        if (text.startsWith("http://") || text.startsWith("https://")) text = fetch(text);
-        JSONArray incoming = parseSources(text), all = sources();
-        Set<String> urls = new HashSet<>();
-        for(int i=0;i<all.length();i++) urls.add(all.getJSONObject(i).getString("url"));
-        int added=0;
-        for(int i=0;i<incoming.length();i++) if(urls.add(incoming.getJSONObject(i).getString("url"))) {
-            if(all.length()>=50) throw new IOException("最多保存 50 个源");
-            all.put(incoming.getJSONObject(i)); added++;
+        if (text.startsWith("http://") || text.startsWith("https://"))
+            return new SourceSubscriptions(this).subscribe(text);
+        JSONArray incoming = parseSources(text);
+        synchronized (DEFAULTS_LOCK) {
+            JSONArray all = sources(); Set<String> urls = new HashSet<>();
+            for(int i=0;i<all.length();i++) urls.add(all.getJSONObject(i).getString("url"));
+            int added=0;
+            for(int i=0;i<incoming.length();i++) if(urls.add(incoming.getJSONObject(i).getString("url"))) {
+                if(all.length()>=50) throw new IOException("最多保存 50 个源");
+                all.put(incoming.getJSONObject(i)); added++;
+            }
+            saveSources(all);return added;
         }
-        saveSources(all);return added;
     }
     static JSONArray parseSources(String text) throws Exception {
         return parseSources(text, false);
@@ -119,6 +128,17 @@ final class LocalRepository {
         HttpURLConnection conn=(HttpURLConnection)uri.toURL().openConnection();
         conn.setInstanceFollowRedirects(true);conn.setConnectTimeout(6000);conn.setReadTimeout(8000);
         conn.setRequestProperty("User-Agent",UA);conn.setRequestProperty("Accept","*/*");return conn;
+    }
+    static HttpURLConnection openSubscription(String url) throws IOException {
+        HttpURLConnection conn=open(validate(url));
+        conn.setUseCaches(false);
+        conn.setRequestProperty("Cache-Control","no-cache");
+        conn.setRequestProperty("Pragma","no-cache");
+        return conn;
+    }
+    static String fetchSubscription(String url) throws Exception {
+        HttpURLConnection conn=openSubscription(url);
+        try{int code=conn.getResponseCode();if(code<200||code>=300)throw new IOException("订阅 HTTP "+code);return read(conn.getInputStream(),4*1024*1024);}finally{conn.disconnect();}
     }
     static String read(InputStream in,int limit) throws IOException {
         try(InputStream stream=in;ByteArrayOutputStream out=new ByteArrayOutputStream()){
